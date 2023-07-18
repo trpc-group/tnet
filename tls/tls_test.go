@@ -385,9 +385,11 @@ func runTestWithHandlesOnRequestOnClose(
 	conn, err := tls.Dial("tcp", addr, dialOpts...)
 	require.Nil(t, err)
 	conn.SetOnRequest(func(_ tls.Conn) error {
+		t.Logf("on request\n")
 		return nil
 	})
 	conn.SetOnClosed(func(_ tls.Conn) error {
+		t.Logf("closed\n")
 		return nil
 	})
 	require.Nil(t, clientHandle(conn))
