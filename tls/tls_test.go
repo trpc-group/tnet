@@ -260,62 +260,6 @@ func TestClientAndServerForHighConcurrency(t *testing.T) {
 	<-done
 }
 
-func TestClientAndServerForHighConcurrency(t *testing.T) {
-	done := make(chan struct{})
-	cancel := runServer(t, func(c tls.Conn) error {
-		buf := make([]byte, 20)
-		n, err := c.Read(buf)
-		if errors.Is(err, tnet.ErrConnClosed) {
-			return err
-		}
-		require.Nil(t, err)
-		require.Equal(t, 20, n)
-		n, err = c.Write(buf)
-		require.Nil(t, err)
-		require.Equal(t, 20, n)
-		return nil
-	}, done, tls.WithServerTLSConfig(getTLSCfg()))
-	conn, err := tls.Dial("tcp", addr, tls.WithClientTLSConfig(&stdtls.Config{InsecureSkipVerify: true}))
-	require.Nil(t, err)
-	buf := make([]byte, 20)
-	rand.Read(buf)
-	var (
-		wg         sync.WaitGroup
-		concurrent = 100
-		reqNum     = 100
-	)
-	wg.Add(concurrent * reqNum)
-	conn.SetOnRequest(func(c tls.Conn) error {
-		data := make([]byte, 20)
-		n, err := conn.Read(data)
-		if errors.Is(err, tnet.ErrConnClosed) {
-			return err
-		}
-		require.Nil(t, err)
-		require.Equal(t, 20, n)
-		require.Equal(t, buf, data)
-		wg.Done()
-		return nil
-	})
-	for i := 0; i < concurrent; i++ {
-		go func() {
-			for i := 0; i < reqNum; i++ {
-				n, err := conn.Write(buf)
-				require.Nil(t, err)
-				require.Equal(t, 20, n)
-			}
-		}()
-	}
-	require.Eventually(t,
-		func() bool {
-			wg.Wait()
-			return true
-		}, time.Second, time.Millisecond*200,
-		"The onRequest of the client is not triggered enough times, some responses are missed.")
-	cancel()
-	<-done
-}
-
 func BenchmarkTNetClientServer(b *testing.B) {
 	buf := make([]byte, 5)
 	ln, err := tnet.Listen("tcp", listenAddr)
