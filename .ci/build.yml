@@ -1,0 +1,15 @@
+version: v2.0
+
+resources:
+  repositories:
+    - repository: ci_templates/public/codecc #声明引用的模板地址
+      name: codecc
+
+stages:
+  - name: "stage1"
+    check-out: #Stage准出
+      gates: #声明质量红线
+      - template: commonGate.yml@codecc
+    jobs:
+      template:
+      - name: openScan.yml@codecc
