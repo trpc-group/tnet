@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 	"trpc.group/trpc-go/tnet/internal/iovec"
+	"trpc.group/trpc-go/tnet/internal/poller/event"
 	"trpc.group/trpc-go/tnet/log"
 	"trpc.group/trpc-go/tnet/metrics"
 )
@@ -45,7 +46,7 @@ func newPoller(ignoreTaskError bool) (Poller, error) {
 	poller := &epoll{
 		fd:              fd,
 		desc:            desc,
-		events:          make([]epollevent, defaultEventCount),
+		events:          make([]event.EpollEvent, defaultEventCount),
 		ioData:          iovec.NewIOData(),
 		buf:             make([]byte, 8),
 		ignoreTaskError: ignoreTaskError,
@@ -61,13 +62,13 @@ type epoll struct {
 	desc            *Desc
 	ioData          iovec.IOData
 	buf             []byte
-	events          []epollevent
+	events          []event.EpollEvent
 	fd              int
 	notified        int32
 	ignoreTaskError bool
 }
 
-func epollWait(epfd int, events []epollevent, msec int) (n int, err error) {
+func epollWait(epfd int, events []event.EpollEvent, msec int) (n int, err error) {
 	var r0 uintptr
 	var _p0 = unsafe.Pointer(&events[0])
 	if msec == 0 {
@@ -118,7 +119,7 @@ func (ep *epoll) handle(n int) {
 	var wakeUp bool
 	for i := 0; i < n; i++ {
 		event := ep.events[i]
-		desc := *(**Desc)(unsafe.Pointer(&event.data))
+		desc := *(**Desc)(unsafe.Pointer(&event.Data))
 		if desc.FD == ep.desc.FD {
 			_, _ = unix.Read(ep.desc.FD, ep.buf)
 			wakeUp = true
@@ -128,11 +129,11 @@ func (ep *epoll) handle(n int) {
 		var inHup bool
 		// Read/Write and error events may be triggered at the same time,
 		// so use if/else instead of switch/case to determine them separately.
-		if event.events&(unix.EPOLLHUP|unix.EPOLLRDHUP|unix.EPOLLERR) != 0 {
+		if event.Events&(unix.EPOLLHUP|unix.EPOLLRDHUP|unix.EPOLLERR) != 0 {
 			inHup = true
 		}
-		readable := event.events&(unix.EPOLLIN|unix.EPOLLPRI) != 0
-		writable := event.events&(unix.EPOLLOUT) != 0
+		readable := event.Events&(unix.EPOLLIN|unix.EPOLLPRI) != 0
+		writable := event.Events&(unix.EPOLLOUT) != 0
 		// The handler function may change at runtime, so for consistency,
 		// we store them in a temporary variable.
 		onRead, onWrite, data := desc.OnRead, desc.OnWrite, desc.Data
@@ -206,32 +207,32 @@ func (ep *epoll) Trigger(job Job) error {
 }
 
 // Control the event of Desc and the operations is defined by Event.
-func (ep *epoll) Control(desc *Desc, event Event) (err error) {
-	evt := &epollevent{}
-	*(**Desc)(unsafe.Pointer(&evt.data)) = desc
+func (ep *epoll) Control(desc *Desc, e Event) (err error) {
+	evt := &event.EpollEvent{}
+	*(**Desc)(unsafe.Pointer(&evt.Data)) = desc
 	defer func() {
 		if err != nil { // Prevent unconditional execution of fmt.Sprintf.
-			err = errors.Wrap(err, fmt.Sprintf("event: %s, connection may be closed", event))
+			err = errors.Wrap(err, fmt.Sprintf("event: %s, connection may be closed", e))
 		}
 	}()
-	switch event {
+	switch e {
 	case Readable:
-		evt.events = rflags
+		evt.Events = rflags
 		return ep.insert(desc.FD, evt)
 	case Writable:
-		evt.events = wflags
+		evt.Events = wflags
 		return ep.insert(desc.FD, evt)
 	case ReadWriteable:
-		evt.events = rflags | wflags
+		evt.Events = rflags | wflags
 		return ep.insert(desc.FD, evt)
 	case ModReadable:
-		evt.events = rflags
+		evt.Events = rflags
 		return ep.interest(desc.FD, evt)
 	case ModWritable:
-		evt.events = wflags
+		evt.Events = wflags
 		return ep.interest(desc.FD, evt)
 	case ModReadWriteable:
-		evt.events = rflags | wflags
+		evt.Events = rflags | wflags
 		return ep.interest(desc.FD, evt)
 	case Detach:
 		return ep.remove(desc.FD)
@@ -240,14 +241,14 @@ func (ep *epoll) Control(desc *Desc, event Event) (err error) {
 	}
 }
 
-func (ep *epoll) insert(fd int, event *epollevent) error {
+func (ep *epoll) insert(fd int, event *event.EpollEvent) error {
 	if err := epollCtl(ep.fd, unix.EPOLL_CTL_ADD, fd, event); err != nil {
 		return os.NewSyscallError("epoll_ctl add", err)
 	}
 	return nil
 }
 
-func (ep *epoll) interest(fd int, event *epollevent) error {
+func (ep *epoll) interest(fd int, event *event.EpollEvent) error {
 	if err := epollCtl(ep.fd, unix.EPOLL_CTL_MOD, fd, event); err != nil {
 		return os.NewSyscallError("epoll_ctl mod", err)
 	}
@@ -261,12 +262,7 @@ func (ep *epoll) remove(fd int) error {
 	return nil
 }
 
-type epollevent struct {
-	events uint32
-	data   [8]byte
-}
-
-func epollCtl(epfd int, op int, fd int, event *epollevent) error {
+func epollCtl(epfd int, op int, fd int, event *event.EpollEvent) error {
 	var err error
 	_, _, err = unix.RawSyscall6(
 		unix.SYS_EPOLL_CTL,
