@@ -1,5 +1,13 @@
 # Introduction
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/trpc.group/tnet.svg)](https://pkg.go.dev/github.com/trpc.group/tnet)
+[![Go Report Card](https://goreportcard.com/badge/github.com/trpc.group/trpc-go/tnet)](https://goreportcard.com/report/github.com/trpc.group/trpc-go/tnet)
+[![LICENSE](https://img.shields.io/github/license/trpc.group/tnet.svg?style=flat-square)](https://github.com/trpc.group/tnet/blob/main/LICENSE)
+[![Releases](https://img.shields.io/github/release/trpc.group/tnet.svg?style=flat-square)](https://github.com/trpc.group/tnet/releases)
+[![Docs](https://img.shields.io/badge/docs-latest-green)](http://test.trpc.group.woa.com/docs/)
+[![Tests](https://github.com/trpc.group/tnet/actions/workflows/prc.yaml/badge.svg)](https://github.com/trpc.group/tnet/actions/workflows/prc.yaml)
+[![Coverage](https://codecov.io/gh/trpc.group/tnet/branch/main/graph/badge.svg)](https://app.codecov.io/gh/trpc.group/tnet/tree/main)
+
 [中文版](./README_cn.md)
 
 __tnet__ is an event loop networking framework that provides versatile models. The core aims are:
