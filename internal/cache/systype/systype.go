@@ -53,7 +53,7 @@ func GetIOVECWrapper(bs [][]byte) ([]unix.Iovec, *IOVECWrapper) {
 		}
 		v = append(v, unix.Iovec{
 			Base: &b[0],
-			Len:  converUint(len(b)),
+			Len:  convertUint(len(b)),
 		})
 	}
 	return v, h
@@ -68,31 +68,31 @@ func PutIOVECWrapper(h *IOVECWrapper) {
 	iovecPool.Put(h)
 }
 
-// IODatas is a wrapper for [][]byte struct.
-type IODatas struct {
+// IOData is a wrapper for [][]byte struct.
+type IOData struct {
 	D [][]byte
 }
 
 var ioDataPool sync.Pool = sync.Pool{
 	New: func() interface{} {
-		return &IODatas{
+		return &IOData{
 			D: make([][]byte, 0, MaxLen),
 		}
 	},
 }
 
-// GetIODatas get a [][]byte with fixed capacity.
-// Release it using PutIODatas.
-func GetIODatas(size int) ([][]byte, *IODatas) {
+// GetIOData get a [][]byte with fixed capacity.
+// Release it using PutIOData.
+func GetIOData(size int) ([][]byte, *IOData) {
 	if size > MaxLen {
 		return make([][]byte, size), nil
 	}
-	d := ioDataPool.Get().(*IODatas)
+	d := ioDataPool.Get().(*IOData)
 	return d.D[:size], d
 }
 
-// PutIODatas release a [][]byte.
-func PutIODatas(d *IODatas) {
+// PutIOData release a [][]byte.
+func PutIOData(d *IOData) {
 	if cap(d.D) != MaxLen {
 		return
 	}
@@ -100,7 +100,7 @@ func PutIODatas(d *IODatas) {
 	ioDataPool.Put(d)
 }
 
-//-------------------------------------MMsghdr------------------------------------
+// -------------------------------------MMsghdr------------------------------------
 
 // MMsghdr is the input parameter of recvmmsg.
 type MMsghdr struct {
@@ -137,7 +137,7 @@ func BuildMMsg(m *MMsghdr, name, buf []byte) {
 	m.Hdr.Iov = &unix.Iovec{}
 	m.Hdr.Iovlen = 1
 	m.Hdr.Iov.Base = (*byte)(unsafe.Pointer(&buf[0]))
-	m.Hdr.Iov.Len = converUint(len(buf))
+	m.Hdr.Iov.Len = convertUint(len(buf))
 	m.Hdr.Name = (*byte)(unsafe.Pointer(&name[0]))
 	m.Hdr.Namelen = uint32(len(name))
 }

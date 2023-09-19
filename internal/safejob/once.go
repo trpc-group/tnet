@@ -10,7 +10,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-// OnceJob means thant the job can only be executed once and then marked closed.
+// OnceJob means that the job can only be executed once and then marked closed.
 type OnceJob struct {
 	closed atomic.Bool
 }

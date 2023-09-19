@@ -308,8 +308,8 @@ func (b *Buffer) Read(p []byte) (int, error) {
 
 // PeekBlocks peeks blocks from buffer as many as possible, and returns the block numbers it gets.
 // This will not advance the buffer. In general, it should be used with Skip(n).
-func (b *Buffer) PeekBlocks(datas [][]byte) int {
-	if len(datas) == 0 {
+func (b *Buffer) PeekBlocks(data [][]byte) int {
+	if len(data) == 0 {
 		return 0
 	}
 
@@ -319,13 +319,13 @@ func (b *Buffer) PeekBlocks(datas [][]byte) int {
 		return 0
 	}
 	var blocks int
-	for rest, rnode := b.LenRead(), b.rnode; blocks < len(datas) && rest > 0; rnode = rnode.next {
+	for rest, rnode := b.LenRead(), b.rnode; blocks < len(data) && rest > 0; rnode = rnode.next {
 		l := rnode.len()
 		if l != 0 {
 			if l > rest {
 				l = rest
 			}
-			datas[blocks] = rnode.block[rnode.r : int(rnode.r)+l]
+			data[blocks] = rnode.block[rnode.r : int(rnode.r)+l]
 			rest -= l
 			blocks++
 		}

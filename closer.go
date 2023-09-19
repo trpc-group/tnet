@@ -19,7 +19,7 @@ const (
 	closeAll
 )
 
-// closer is used to ensure the concurrent safty of the read/write
+// closer is used to ensure the concurrent safety of the read/write
 // process and the closing process of the connection. Ensures that
 // after a connection is closed, no more read or write job are allowed
 // to start.

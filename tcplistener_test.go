@@ -109,9 +109,9 @@ func TestListenerAcceptAfterClose(t *testing.T) {
 		network string
 		address string
 	}{
-		{"tcp close befor accept", "tcp", ":0"},
-		{"tcp4 close befor accept", "tcp4", "127.0.0.1:0"},
-		{"tcp6 close befor accept", "tcp6", "[::1]:0"},
+		{"tcp close before accept", "tcp", ":0"},
+		{"tcp4 close before accept", "tcp4", "127.0.0.1:0"},
+		{"tcp6 close before accept", "tcp6", "[::1]:0"},
 	}
 	for _, test := range tests {
 		if !netutil.TestableNetwork(test.network) {

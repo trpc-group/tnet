@@ -245,12 +245,12 @@ func TestBuffer_PeekBlocks(t *testing.T) {
 	defer Free(b)
 	s1, s2, s3 := []byte{1, 2, 3}, []byte{4, 5, 6}, []byte{7, 8, 9}
 	b.Writev(false, s1, s2, s3)
-	datas := make([][]byte, 3)
-	n := b.PeekBlocks(datas)
+	data := make([][]byte, 3)
+	n := b.PeekBlocks(data)
 	assert.Equal(t, 3, n)
-	assert.Equal(t, s1, datas[0])
-	assert.Equal(t, s2, datas[1])
-	assert.Equal(t, s3, datas[2])
+	assert.Equal(t, s1, data[0])
+	assert.Equal(t, s2, data[1])
+	assert.Equal(t, s3, data[2])
 }
 
 func TestBuffer_ReadBlock(t *testing.T) {

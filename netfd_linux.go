@@ -31,9 +31,9 @@ func (nfd *netFD) FillToBuffer(b *buffer.Buffer) error {
 	// Prepare mmsgs used to SYS_RECVMMSG syscall.
 	mmsgs := systype.GetMMsghdrs(udpPacketNum)
 	defer systype.PutMMsghdrs(mmsgs)
-	bufs, w := systype.GetIODatas(udpPacketNum)
+	bufs, w := systype.GetIOData(udpPacketNum)
 	if w != nil {
-		defer systype.PutIODatas(w)
+		defer systype.PutIOData(w)
 	}
 	n := nfd.udpBufferSize + netutil.SockaddrSize
 	for i := 0; i < udpPacketNum; i++ {
@@ -69,9 +69,9 @@ func (nfd *netFD) FillToBuffer(b *buffer.Buffer) error {
 func (nfd *netFD) sendMMsg(b *buffer.Buffer) error {
 	mmsgs := systype.GetMMsghdrs(udpPacketNum)
 	defer systype.PutMMsghdrs(mmsgs)
-	bufs, w := systype.GetIODatas(udpPacketNum)
+	bufs, w := systype.GetIOData(udpPacketNum)
 	if w != nil {
-		defer systype.PutIODatas(w)
+		defer systype.PutIOData(w)
 	}
 
 	l := b.PeekBlocks(bufs)

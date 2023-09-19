@@ -48,7 +48,7 @@ func (j *ExclusiveUnblockJob) Closed() bool {
 	return j.closed.Load()
 }
 
-// ExclusiveBlockJob excutes the job exclusively, waiting for acquiring the job control.
+// ExclusiveBlockJob executes the job exclusively, waiting for acquiring the job control.
 type ExclusiveBlockJob struct {
 	mu     sync.Mutex
 	closed atomic.Bool
