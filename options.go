@@ -25,6 +25,13 @@ func NumPollers() int {
 	return poller.NumPollers()
 }
 
+// EnablePollerGoschedAfterEvent enables calling runtime.Gosched() after processing of each event
+// during epoll wait handling.
+// This function can only be called inside func init().
+func EnablePollerGoschedAfterEvent() {
+	poller.GoschedAfterEvent = true
+}
+
 // OnTCPOpened fires when the tcp connection is established.
 type OnTCPOpened func(conn Conn) error
 

@@ -158,6 +158,9 @@ func (ep *epoll) handle(n int) {
 		if inHup {
 			hups = append(hups, desc)
 		}
+		if GoschedAfterEvent {
+			runtime.Gosched()
+		}
 	}
 	if wakeUp {
 		ep.runAsyncTasks()
