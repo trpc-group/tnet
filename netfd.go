@@ -175,7 +175,7 @@ func (nfd *netFD) Writev(ivs []unix.Iovec) (int, error) {
 	if len(ivs) == 0 {
 		return 0, nil
 	}
-	r, _, e := unix.RawSyscall(unix.SYS_WRITEV, uintptr(nfd.fd), uintptr(unsafe.Pointer(&ivs[0])), uintptr(len(ivs)))
+	r, _, e := unix.Syscall(unix.SYS_WRITEV, uintptr(nfd.fd), uintptr(unsafe.Pointer(&ivs[0])), uintptr(len(ivs)))
 	metrics.Add(metrics.TCPWritevCalls, 1)
 	if e != 0 {
 		metrics.Add(metrics.TCPWritevFails, 1)
