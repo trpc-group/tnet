@@ -25,7 +25,7 @@ func ListenPacket(proto, addr string) (l net.PacketConn, err error) {
 }
 
 // NewReusablePortPacketConn returns net.FilePacketConn that created from
-// a file discriptor for a socket with SO_REUSEPORT option.
+// a file descriptor for a socket with SO_REUSEPORT option.
 func NewReusablePortPacketConn(proto, addr string) (net.PacketConn, error) {
 	sockaddr, soType, err := getSockaddr(proto, addr)
 	if err != nil {
@@ -123,7 +123,7 @@ func getUDP6Sockaddr(udp *net.UDPAddr) (syscall.Sockaddr, int, error) {
 func determineUDPProto(proto string, ip *net.UDPAddr) (string, error) {
 	// If the protocol is set to "udp", we try to determine the actual protocol
 	// version from the size of the resolved IP address. Otherwise, we simple use
-	// the protcol given to us by the caller.
+	// the protocol given to us by the caller.
 
 	if ip.IP.To4() != nil {
 		return "udp4", nil

@@ -54,10 +54,10 @@ type Conn interface {
 	WriteMessage(MessageType, []byte) error
 	// WritevMessage writes multiple byte slices as a message in a single frame.
 	WritevMessage(MessageType, ...[]byte) error
-	// NextMessageWriter retrun a writer to write the next message.
+	// NextMessageWriter return a writer to write the next message.
 	// A finished message write should end with writer.Close().
 	NextMessageWriter(MessageType) (io.WriteCloser, error)
-	// SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
+	// SetMetaData sets metadata. Through this method, users can bind some custom data to a connection.
 	SetMetaData(interface{})
 	// GetMetaData gets meta data.
 	GetMetaData() interface{}

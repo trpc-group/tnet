@@ -9,6 +9,6 @@
 
 package systype
 
-func converUint(i int) uint64 {
+func convertUint(i int) uint64 {
 	return uint64(i)
 }

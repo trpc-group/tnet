@@ -285,9 +285,9 @@ func (tc *tcpconn) writeToNetFD() error {
 }
 
 func (tc *tcpconn) writeWithCachedIOData() (int, error) {
-	bs, w1 := systype.GetIODatas(systype.MaxLen)
+	bs, w1 := systype.GetIOData(systype.MaxLen)
 	if w1 != nil {
-		defer systype.PutIODatas(w1)
+		defer systype.PutIOData(w1)
 	}
 	l := tc.outBuffer.PeekBlocks(bs)
 	tc.postpone.CheckAndDisablePostponeWrite(l)

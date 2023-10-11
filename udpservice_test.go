@@ -42,7 +42,7 @@ func TestNewUDPService_err(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func TestConverPacketConn(t *testing.T) {
+func TestConvertPacketConn(t *testing.T) {
 	netc, err := net.ListenPacket("udp", getTestAddr())
 	assert.Nil(t, err)
 	tnetc, err := tnet.NewPacketConn(netc)

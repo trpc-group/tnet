@@ -157,7 +157,7 @@ type Packet interface {
 	// Data returns the data of the packet.
 	Data() ([]byte, error)
 
-	// Free will release the underlaying buffer.
+	// Free will release the underlying buffer.
 	// It will recycle the underlying buffer for better performance.
 	// The bytes will be invalid after free, so free it only when it is no longer in use.
 	Free()

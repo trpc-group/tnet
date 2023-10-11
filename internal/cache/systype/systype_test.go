@@ -35,12 +35,12 @@ func TestGetIOHdr(t *testing.T) {
 }
 
 func TestGetIOData(t *testing.T) {
-	iovs, w := systype.GetIODatas(10)
-	defer systype.PutIODatas(w)
+	iovs, w := systype.GetIOData(10)
+	defer systype.PutIOData(w)
 	assert.Equal(t, 10, len(iovs))
 	assert.Equal(t, systype.MaxLen, cap(iovs))
 
-	bigIovs, w := systype.GetIODatas(systype.MaxLen + 1)
+	bigIovs, w := systype.GetIOData(systype.MaxLen + 1)
 	assert.Nil(t, w)
 	assert.Equal(t, systype.MaxLen+1, len(bigIovs))
 }
@@ -62,11 +62,11 @@ func BenchmarkNormal20(b *testing.B) {
 
 func BenchmarkCache20(b *testing.B) {
 	var s [][]byte
-	var w *systype.IODatas
+	var w *systype.IOData
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		s, w = systype.GetIODatas(20)
-		systype.PutIODatas(w)
+		s, w = systype.GetIOData(20)
+		systype.PutIOData(w)
 	}
 	_ = s
 }
@@ -85,14 +85,14 @@ func BenchmarkNormal20Parallel(b *testing.B) {
 }
 
 func BenchmarkMCache20Parallel(b *testing.B) {
-	var w *systype.IODatas
+	var w *systype.IOData
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		var s [][]byte
 		for pb.Next() {
 			for i := 0; i < b.N; i++ {
-				s, w = systype.GetIODatas(20)
-				systype.PutIODatas(w)
+				s, w = systype.GetIOData(20)
+				systype.PutIOData(w)
 			}
 		}
 		_ = s

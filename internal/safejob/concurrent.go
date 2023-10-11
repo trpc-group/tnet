@@ -12,7 +12,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-// ConcurrentJob excutes the job concurrently.
+// ConcurrentJob executes the job concurrently.
 type ConcurrentJob struct {
 	mu     sync.RWMutex
 	closed atomic.Bool

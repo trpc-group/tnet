@@ -19,7 +19,7 @@ import (
 var (
 	// Address is the listening address
 	Address = "127.0.0.1:9991"
-	// Data used to transfered between client and server
+	// Data used to transferred between client and server
 	Data = "hello world!"
 )
 
