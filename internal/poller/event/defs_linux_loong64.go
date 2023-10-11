@@ -5,6 +5,7 @@
 // This file may have been modified by THL A29 Limited ("Tencent Modifications").
 // All Tencent Modifications are Copyright (C) 2023 THL A29 Limited.
 
+// Package event provides definitions of event data.
 package event
 
 // EpollEvent defines epoll event data.

@@ -7,6 +7,7 @@
 
 //go:build linux && (mips64 || mips64le)
 
+// Package event provides definitions of event data.
 package event
 
 // EpollEvent defines epoll event data.
