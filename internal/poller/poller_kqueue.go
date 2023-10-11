@@ -125,6 +125,9 @@ func (k *kqueue) handle(n int) {
 				}
 			}
 		}
+		if GoschedAfterEvent {
+			runtime.Gosched()
+		}
 	}
 
 	if wakeUp {

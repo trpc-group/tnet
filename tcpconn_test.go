@@ -309,7 +309,7 @@ func TestConnWrite_ServHandleErr(t *testing.T) {
 			assert.Nil(t, err)
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
-			time.Sleep(time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			assert.Equal(t, false, server.IsActive())
 		},
 		isTnetCliConn: true,

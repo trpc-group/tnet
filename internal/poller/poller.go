@@ -9,6 +9,11 @@ package poller
 
 import "fmt"
 
+// GoschedAfterEvent decides whether to call runtime.Gosched() after processing of each event
+// during epoll waiting handling.
+// This global variable can only be changed inside func init().
+var GoschedAfterEvent bool
+
 // Event defines the operation of poll.Control.
 type Event int
 

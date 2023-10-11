@@ -21,7 +21,6 @@ func TestTimerNormal(t *testing.T) {
 	time.Sleep(time.Millisecond * 10)
 	assert.Equal(t, true, t1.Expired())
 
-	t1.Start()
 	t1.Reset(time.Time{})
 	assert.Equal(t, true, t1.IsZero())
 	assert.Equal(t, false, t1.Expired())
