@@ -1,3 +1,5 @@
+English | [中文](README.zh_CN.md)
+
 # Websocket examples: customized control frame handler (advanced)
 
 Normally, users would not want to utilize this feature, because ping/pong/close frames have their default handling procedures defined in [RFC6455](https://datatracker.ietf.org/doc/rfc6455/). 

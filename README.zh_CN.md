@@ -1,3 +1,5 @@
+[English](README.md) | 中文
+
 # 简介
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/trpc.group/tnet.svg)](https://pkg.go.dev/github.com/trpc.group/tnet)
@@ -7,8 +9,6 @@
 [![Docs](https://img.shields.io/badge/docs-latest-green)](http://test.trpc.group.woa.com/docs/)
 [![Tests](https://github.com/trpc.group/tnet/actions/workflows/prc.yaml/badge.svg)](https://github.com/trpc.group/tnet/actions/workflows/prc.yaml)
 [![Coverage](https://codecov.io/gh/trpc.group/tnet/branch/main/graph/badge.svg)](https://app.codecov.io/gh/trpc.group/tnet/tree/main)
-
-[English](./README.md)
 
 __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库，它解决了以下业务诉求：
 
@@ -229,9 +229,3 @@ GetMetaData() interface{}
 * tRPC-Go
 
 tRPC-Go 已经集成 tnet 
-
-## 实现细节
-
-* [整体结构](./docs/overview_cn.md)
-* [协程模型](./docs/models_cn.md)
-* [缓冲区设计](./docs/buffer_cn.md)

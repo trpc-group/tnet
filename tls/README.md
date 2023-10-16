@@ -1,3 +1,5 @@
+English | [中文](README.zh_CN.md)
+
 # extension: tls 
 
 This is an extension combining [tnet](https://trpc.group/trpc-go/tnet) and [crypto/tls](https://pkg.go.dev/crypto/tls) to improve memory usage and performance under millions of connections, without intrusive modification of the underlying library.

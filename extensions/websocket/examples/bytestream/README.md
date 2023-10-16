@@ -1,3 +1,5 @@
+English | [中文](README.zh_CN.md)
+
 # Websocket examples: byte/text stream
 
 Typically websocket is used to work on message level (ReadMessage or WriteMessage). If users want to use websocket as a protocol to transmit byte stream or text stream. Certain options are provided:

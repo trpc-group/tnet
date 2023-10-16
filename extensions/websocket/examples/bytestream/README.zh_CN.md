@@ -1,3 +1,5 @@
+[English](README.md) | 中文
+
 # Websocket examples: byte/text stream
 
 websocket 协议通常在 Message 层级上进行使用（通过 ReadMessage, WriteMessage），假如用户想要将 websocket 协议当作一个用于传输字节流或文本流的协议，可以使用以下选项：

@@ -1,3 +1,0 @@
-## Goroutine Models
-
-TODO(wineguo)

@@ -1,3 +1,5 @@
+[English](README.md) | 中文
+
 # extension: websocket 
 
 websocket 扩展结合了 [tnet](https://trpc.group/trpc-go/tnet) 和 [gobwas/ws](https://github.com/gobwas/ws) 来解决百万连接下的内存占用以及性能问题。

@@ -1,3 +1,5 @@
+[English](README.md) | 中文
+
 # Websocket examples: customized control frame handler (advanced)
 
 通常情况下，用户不需要对控制帧指定自定义的处理逻辑，因为它们在 [RFC6455](https://datatracker.ietf.org/doc/rfc6455/) 中有默认的处理规则。
