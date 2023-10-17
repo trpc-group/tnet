@@ -228,9 +228,3 @@ GetMetaData() interface{}
 * tRPC-Go
 
 tRPC-Go has integrated __tnet__.
-
-## Implementation Details
-
-* Overall architecture: [overview.md](./docs/overview.md)
-* Goroutine Models: [models.md](./docs/models.md)
-* Design and implementation of buffer: [buffer.md](./docs/buffer.md)
