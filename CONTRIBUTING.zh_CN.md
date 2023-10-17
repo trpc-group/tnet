@@ -100,11 +100,18 @@ tnet 代码仓库中的文件不列出作者姓名，以避免混乱并避免不
 
 您贡献的新文件应使用标准版权声明：
 ```go
-// Tencent is pleased to support the open source community by making tnet available.
-// Copyright (C) 2023 THL A29 Limited, a Tencent company. All rights reserved.
+//
+//
+// Tencent is pleased to support the open source community by making tRPC available.
+//
+// Copyright (C) 2023 THL A29 Limited, a Tencent company.
+// All rights reserved.
+//
 // If you have downloaded a copy of the tRPC source code from Tencent,
-// please note that tnet source code is licensed under the Apache 2.0 License,
-// A copy of the Apache 2.0 License can be found in the LICENSE file.
+// please note that tRPC source code is licensed under the  Apache 2.0 License,
+// A copy of the Apache 2.0 License is included in this file.
+//
+//
 ```
 
 代码仓库中的文件在添加时受版权保护。
