@@ -2,6 +2,7 @@
 name: Bugs
 about: config, server, client, or anything else
 title: "affected/package: "
+labels: bug
 ---
 
 <!--
