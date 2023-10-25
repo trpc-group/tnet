@@ -36,7 +36,7 @@ import (
 var _ PacketConn = (*udpconn)(nil)
 
 type udpconn struct {
-	metaData    interface{}
+	metaData    any
 	reqHandle   atomic.Value
 	closeHandle atomic.Value
 	readTrigger chan struct{}
@@ -416,7 +416,7 @@ func (uc *udpconn) getOnRequest() UDPHandler {
 	return reqHandle
 }
 
-func udpOnRead(data interface{}, _ *iovec.IOData) error {
+func udpOnRead(data any, _ *iovec.IOData) error {
 	// data passed from desc to udpOnRead must be of type *udpconn.
 	uc, ok := data.(*udpconn)
 	if !ok || uc == nil {
@@ -451,7 +451,7 @@ func udpOnRead(data interface{}, _ *iovec.IOData) error {
 	return doTask(uc)
 }
 
-func udpOnWrite(data interface{}) error {
+func udpOnWrite(data any) error {
 	// data passed from desc to udpOnWrite must be of type *udpconn.
 	uc, ok := data.(*udpconn)
 	if !ok || uc == nil {
@@ -570,11 +570,11 @@ func udpSyncHandle(conn *udpconn) error {
 }
 
 // SetMetaData sets meta data.
-func (uc *udpconn) SetMetaData(m interface{}) {
+func (uc *udpconn) SetMetaData(m any) {
 	uc.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (uc *udpconn) GetMetaData() interface{} {
+func (uc *udpconn) GetMetaData() any {
 	return uc.metaData
 }

@@ -65,11 +65,11 @@ func Stop() {
 }
 
 // Callback is asynchronous callback function when timer expired.
-type Callback func(data interface{})
+type Callback func(data any)
 
 // Timer is an async timer.
 type Timer struct {
-	data          interface{}
+	data          any
 	expiredHandle Callback
 	begin         atomic.Time
 	circle        int
@@ -81,7 +81,7 @@ type Timer struct {
 // NewTimer creates an async timer with data and expiredHandle function. After timeout
 // time, the timer will be expired, and expiredHandle will be called with argument data.
 // Note that the timer becomes effective after having been added to time wheel.
-func NewTimer(data interface{}, expiredHandle Callback, timeout time.Duration) *Timer {
+func NewTimer(data any, expiredHandle Callback, timeout time.Duration) *Timer {
 	t := &Timer{
 		data:          data,
 		expiredHandle: expiredHandle,

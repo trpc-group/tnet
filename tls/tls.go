@@ -23,9 +23,9 @@ import (
 type Conn interface {
 	net.Conn
 	// SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
-	SetMetaData(interface{})
+	SetMetaData(any)
 	// GetMetaData gets meta data.
-	GetMetaData() interface{}
+	GetMetaData() any
 	// SetIdleTimeout sets connection level idle timeout.
 	SetIdleTimeout(d time.Duration) error
 	// SetFlushWrite sets flush write flag for the connection.

@@ -121,10 +121,10 @@ func (nfd *netFD) close() {
 
 // Schedule add NetFD to poller system, and monitor Readable Event.
 func (nfd *netFD) Schedule(
-	onRead func(data interface{}, ioData *iovec.IOData) error,
-	onWrite func(data interface{}) error,
-	onHup func(data interface{}),
-	conn interface{},
+	onRead func(data any, ioData *iovec.IOData) error,
+	onWrite func(data any) error,
+	onHup func(data any),
+	conn any,
 ) error {
 	if nfd.desc != nil {
 		return errors.New("already in poller system")

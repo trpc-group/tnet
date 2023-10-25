@@ -65,9 +65,9 @@ type Conn interface {
 	// A finished message write should end with writer.Close().
 	NextMessageWriter(MessageType) (io.WriteCloser, error)
 	// SetMetaData sets metadata. Through this method, users can bind some custom data to a connection.
-	SetMetaData(interface{})
+	SetMetaData(any)
 	// GetMetaData gets meta data.
-	GetMetaData() interface{}
+	GetMetaData() any
 	// Subprotocol returns the negotiated protocol for the connection.
 	Subprotocol() string
 	// SetPingHandler sets customized Ping frame handler.

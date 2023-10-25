@@ -27,7 +27,7 @@ import (
 )
 
 // GetFD returns the integer Unix file descriptor referencing the tcp/udp socket.
-func GetFD(socket interface{}) (int, error) {
+func GetFD(socket any) (int, error) {
 	conn, ok := socket.(syscall.Conn)
 	if !ok {
 		return -1, fmt.Errorf("type %T doesn't implement syscall.Conn interface", socket)
@@ -49,7 +49,7 @@ func GetFD(socket interface{}) (int, error) {
 }
 
 // DupFD duplicates file descriptor and returns the new fd.
-func DupFD(socket interface{}) (int, error) {
+func DupFD(socket any) (int, error) {
 	var f *os.File
 	var err error
 	switch conn := socket.(type) {

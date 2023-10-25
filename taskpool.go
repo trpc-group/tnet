@@ -24,7 +24,7 @@ var (
 	usrPool, _  = ants.NewPool(maxRoutines)
 )
 
-func taskHandler(v interface{}) {
+func taskHandler(v any) {
 	switch conn := v.(type) {
 	case *tcpconn:
 		tcpAsyncHandler(conn)
@@ -33,7 +33,7 @@ func taskHandler(v interface{}) {
 	}
 }
 
-func doTask(args interface{}) error {
+func doTask(args any) error {
 	metrics.Add(metrics.TaskAssigned, 1)
 	return sysPool.Invoke(args)
 }

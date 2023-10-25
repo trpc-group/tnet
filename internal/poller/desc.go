@@ -37,12 +37,12 @@ type Desc struct {
 	next   *Desc
 	poller Poller
 	index  int32
-	Data   interface{}
+	Data   any
 
 	// Desc provides three callbacks for fd's reading, writing or hanging events.
-	OnRead  func(data interface{}, ioData *iovec.IOData) error
-	OnWrite func(data interface{}) error
-	OnHup   func(data interface{})
+	OnRead  func(data any, ioData *iovec.IOData) error
+	OnWrite func(data any) error
+	OnHup   func(data any)
 
 	// FD is the file descriptor that will be monitored by poller.
 	FD int

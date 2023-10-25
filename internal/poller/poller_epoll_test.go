@@ -54,7 +54,7 @@ func TestNormal(t *testing.T) {
 	pollDesc.FD = eventFD
 	pollDesc.Data = 1
 	ch := make(chan struct{}, 1)
-	pollDesc.OnRead = func(_ interface{}, _ *iovec.IOData) error {
+	pollDesc.OnRead = func(_ any, _ *iovec.IOData) error {
 		onRead++
 		ch <- struct{}{}
 		buf := make([]byte, 8)
@@ -62,7 +62,7 @@ func TestNormal(t *testing.T) {
 		return nil
 	}
 	hup := make(chan struct{}, 1)
-	pollDesc.OnHup = func(_ interface{}) {
+	pollDesc.OnHup = func(_ any) {
 		onHup = 1
 		hup <- struct{}{}
 	}
@@ -75,7 +75,7 @@ func TestNormal(t *testing.T) {
 	assert.Equal(t, n, len(buf))
 	<-ch
 	assert.Equal(t, onRead, 1)
-	pollDesc.OnRead = func(_ interface{}, _ *iovec.IOData) error {
+	pollDesc.OnRead = func(_ any, _ *iovec.IOData) error {
 		return errors.New("fake fails")
 	}
 	_, err = unix.Write(eventFD, buf)

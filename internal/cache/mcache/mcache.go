@@ -28,7 +28,7 @@ var caches [maxSize]sync.Pool
 func init() {
 	for i := 0; i < maxSize; i++ {
 		size := 1 << i
-		caches[i].New = func() interface{} {
+		caches[i].New = func() any {
 			s := make([]byte, 0, size)
 			return s
 		}

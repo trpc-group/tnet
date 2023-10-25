@@ -27,7 +27,7 @@ type testWrapper struct {
 	isHandled bool
 }
 
-var expireHandle = func(data interface{}) {
+var expireHandle = func(data any) {
 	t, ok := data.(*testWrapper)
 	if !ok {
 		return
