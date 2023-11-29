@@ -20,7 +20,7 @@ import (
 )
 
 var nodePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &node{}
 	},
 }

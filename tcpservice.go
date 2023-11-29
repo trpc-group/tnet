@@ -111,7 +111,7 @@ func (s *tcpservice) close() error {
 
 // tcpServiceOnRead is triggered by the tcp listener read event,
 // which means that "accept" needs to be handled.
-func tcpServiceOnRead(data interface{}, _ *iovec.IOData) error {
+func tcpServiceOnRead(data any, _ *iovec.IOData) error {
 	s, ok := data.(*tcpservice)
 	if !ok || s == nil {
 		panic(fmt.Sprintf("bug: data is not *tcpservice type (%v) or s is nil pointer (%v)", !ok, s == nil))
@@ -155,7 +155,7 @@ func tcpServiceOnRead(data interface{}, _ *iovec.IOData) error {
 	return nil
 }
 
-func tcpServiceOnHup(data interface{}) {
+func tcpServiceOnHup(data any) {
 	s, ok := data.(*tcpservice)
 	if !ok || s == nil {
 		panic(fmt.Sprintf("bug: data is not *tcpservice type (%v) or s is nil pointer (%v)", !ok, s == nil))

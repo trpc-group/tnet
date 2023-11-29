@@ -24,16 +24,16 @@ import (
 type conn struct {
 	*tls.Conn
 	raw      tnet.Conn
-	metaData interface{}
+	metaData any
 }
 
 // SetMetaData sets meta data.
-func (c *conn) SetMetaData(m interface{}) {
+func (c *conn) SetMetaData(m any) {
 	c.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (c *conn) GetMetaData() interface{} {
+func (c *conn) GetMetaData() any {
 	return c.metaData
 }
 

@@ -38,7 +38,7 @@ type conn struct {
 	// Note: This lock does not guarantee concurrent safety when reading message.
 	mu          sync.Mutex
 	raw         rawConnection
-	metaData    interface{}
+	metaData    any
 	role        ws.State    // ws.StateServerSide or ws.StateClientSide.
 	reader      io.Reader   // connection-wise message type reader for Read.
 	messageType MessageType // connection-wise message type for Read/Write.
@@ -56,9 +56,9 @@ type rawConnection interface {
 	// SetIdleTimeout sets the idle timeout to close connection.
 	SetIdleTimeout(d time.Duration) error
 	// SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
-	SetMetaData(interface{})
+	SetMetaData(any)
 	// GetMetaData gets meta data.
-	GetMetaData() interface{}
+	GetMetaData() any
 }
 
 // rawConn wraps tls.Conn to provide a pseudo Writev implementation.
@@ -296,12 +296,12 @@ func (w *writeCloser) Close() error {
 }
 
 // SetMetaData sets meta data.
-func (c *conn) SetMetaData(m interface{}) {
+func (c *conn) SetMetaData(m any) {
 	c.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (c *conn) GetMetaData() interface{} {
+func (c *conn) GetMetaData() any {
 	return c.metaData
 }
 

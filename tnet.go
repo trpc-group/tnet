@@ -42,10 +42,10 @@ type BaseConn interface {
 	SetFlushWrite(flushWrite bool)
 
 	// SetMetaData sets metadata. Through this method, users can bind some custom data to a connection.
-	SetMetaData(m interface{})
+	SetMetaData(m any)
 
 	// GetMetaData gets metadata.
-	GetMetaData() interface{}
+	GetMetaData() any
 }
 
 // Conn is generic for stream oriented network connection.

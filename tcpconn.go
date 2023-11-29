@@ -57,7 +57,7 @@ var _ Conn = (*tcpconn)(nil)
 
 type tcpconn struct {
 	service     *tcpservice
-	metaData    interface{}
+	metaData    any
 	reqHandle   atomic.Value
 	closeHandle atomic.Value
 	readTrigger chan struct{}
@@ -573,7 +573,7 @@ func (tc *tcpconn) refreshConn() error {
 	return nil
 }
 
-func tcpOnIdle(data interface{}) {
+func tcpOnIdle(data any) {
 	c, ok := data.(Conn)
 	if !ok {
 		return
@@ -581,7 +581,7 @@ func tcpOnIdle(data interface{}) {
 	c.Close()
 }
 
-func tcpOnRead(data interface{}, ioData *iovec.IOData) error {
+func tcpOnRead(data any, ioData *iovec.IOData) error {
 	// data passed from desc to tcpOnRead must be of type *tcpconn.
 	tc, ok := data.(*tcpconn)
 	if !ok || tc == nil {
@@ -621,7 +621,7 @@ func tcpOnRead(data interface{}, ioData *iovec.IOData) error {
 	return doTask(tc)
 }
 
-func tcpOnWrite(data interface{}) error {
+func tcpOnWrite(data any) error {
 	// data passed from desc to tcpOnWrite must be of type *tcpconn.
 	tc, ok := data.(*tcpconn)
 	if !ok || tc == nil {
@@ -658,7 +658,7 @@ func tcpOnWrite(data interface{}) error {
 	return nil
 }
 
-func tcpOnHup(data interface{}) {
+func tcpOnHup(data any) {
 	tc, ok := data.(*tcpconn)
 	if ok && tc != nil {
 		tc.Close()
@@ -711,11 +711,11 @@ func tcpSyncHandle(conn *tcpconn) error {
 }
 
 // SetMetaData sets meta data.
-func (tc *tcpconn) SetMetaData(m interface{}) {
+func (tc *tcpconn) SetMetaData(m any) {
 	tc.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (tc *tcpconn) GetMetaData() interface{} {
+func (tc *tcpconn) GetMetaData() any {
 	return tc.metaData
 }

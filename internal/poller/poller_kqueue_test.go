@@ -36,7 +36,7 @@ func TestNormal(t *testing.T) {
 	pollDesc.FD = readStream
 	pollDesc.Data = 0
 	var onRead, onWrite int
-	pollDesc.OnRead = func(interface{}, *iovec.IOData) error {
+	pollDesc.OnRead = func(any, *iovec.IOData) error {
 		onRead++
 		buf := make([]byte, 16)
 		n, err := unix.Read(pollDesc.FD, buf)
@@ -44,7 +44,7 @@ func TestNormal(t *testing.T) {
 		assert.Equal(t, 10, n)
 		return nil
 	}
-	pollDesc.OnWrite = func(interface{}) error {
+	pollDesc.OnWrite = func(any) error {
 		onWrite++
 		return nil
 	}

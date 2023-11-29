@@ -33,7 +33,7 @@ type IOVECWrapper struct {
 }
 
 var iovecPool sync.Pool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &IOVECWrapper{
 			iovec: make([]unix.Iovec, 0, MaxLen),
 		}
@@ -81,7 +81,7 @@ type IOData struct {
 }
 
 var ioDataPool sync.Pool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &IOData{
 			D: make([][]byte, 0, MaxLen),
 		}
@@ -122,7 +122,7 @@ var (
 )
 
 func init() {
-	mmsghdrsPool.New = func() interface{} {
+	mmsghdrsPool.New = func() any {
 		mmsghdrs := make([]MMsghdr, MaxLen)
 		return mmsghdrs
 	}
