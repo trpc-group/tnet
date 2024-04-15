@@ -502,7 +502,7 @@ func (tc *tcpconn) SetIdleTimeout(d time.Duration) error {
 	if !tc.IsActive() {
 		return ErrConnClosed
 	}
-	if d == 0 {
+	if d <= 0 {
 		return nil
 	}
 	if tc.idleTimer != nil {
