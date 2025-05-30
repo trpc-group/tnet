@@ -9,6 +9,7 @@
 [![Tests](https://github.com/trpc-group/tnet/actions/workflows/prc.yml/badge.svg)](https://github.com/trpc-group/tnet/actions/workflows/prc.yml)
 [![Coverage](https://codecov.io/gh/trpc-group/tnet/branch/main/graph/badge.svg)](https://app.codecov.io/gh/trpc-group/tnet/tree/main)
 
+
 __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库，它解决了以下业务诉求：
 
 * 支持更多的连接数（百万级别）
@@ -26,6 +27,7 @@ __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库�
 * 支持服务端和客户端开发
 * 支持 Linux / Mac OS
 * 支持 TLS
+* 支持 HTTP 
 * 支持 WebSocket
 
 ## 用法说明
@@ -37,7 +39,7 @@ __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库�
 
 如下图所示：
 
-![](./docs/pics/two_classes.png)
+![two_classes](./docs/pics/two_classes.png)
 
 `tnet` 默认提供第一类使用方法，第二类使用方法通过 `tnet.WithNonBlocking(true)` 来打开（见 `examples` 文件夹下的具体例子）
 
@@ -47,9 +49,7 @@ __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库�
 
 协程数 = poller 个数 + 活跃连接数，适用于网络 IO 与 CPU 处理均衡的业务场景，缺点是不支持连接多路复用，同一个连接上无法支持业务的并发处理（IO 处理部分无法并发）
 
-![](./docs/pics/mode1.png)
-
-
+![mode1](./docs/pics/mode1.png)
 
 对于第二类 handler 在 poller 协程中的场景，handler 函数通常可以划分为以下两种模式：
 
@@ -60,110 +60,146 @@ __tnet__ 是一个提供了多种模式以满足不同业务需求的网络库�
 
 协程数 = poller 个数 + 数据包的并发处理数，适用于 CPU 密集型场景
 
-![](./docs/pics/mode2.png)
+![mode2](./docs/pics/mode2.png)
 
 * 在第二类中不使用业务协程池对应“IO 处理与业务合并模式”，特点：
 
 协程数 = poller 个数，但是场景苛刻，经典的使用场景为网关场景，这种场景下大部分逻辑只是在做请求的转发，每个请求处理的时间耗时很低，不会出现阻塞，适用于此模式
 
-![](./docs/pics/mode3.png)
+![mode3](./docs/pics/mode3.png)
 
-## 支持的 TCP Option 
+## 支持的 TCP Option
 
 * `tnet.WithTCPKeepAlive` 设置了连接探活的时间间隔，默认值为 15s，设置为 0 时可以关闭连接探活
 
-```golang
+```go
 // WithTCPKeepAlive sets the tcp keep alive interval.
 func WithTCPKeepAlive(keepAlive time.Duration) Option {
-	return Option{func(op *options) {
-		op.tcpKeepAlive = keepAlive
-	}}
+    return Option{func(op *options) {
+        op.tcpKeepAlive = keepAlive
+    }}
 }
 ```
 
 * `tnet.WithTCPIdleTimeout` 设置了连接的空闲超时时间，空闲时间超过给定值时会自动断开连接
 
-```golang
+```go
 // WithTCPIdleTimeout sets the idle timeout to close tcp connection.
 func WithTCPIdleTimeout(idleTimeout time.Duration) Option {
-	return Option{func(op *options) {
-		op.tcpIdleTimeout = idleTimeout
-	}}
+    return Option{func(op *options) {
+        op.tcpIdleTimeout = idleTimeout
+    }}
+}
+```
+
+* `tnet.WithTCPWriteIdleTimeout` (v0.0.18) 设置了连接的写空闲超时时间，写空闲时间超过给定值时会自动断开连接
+
+```go
+// WithTCPWriteIdleTimeout sets write idle timeout to close tcp connection.
+func WithTCPWriteIdleTimeout(idleTimeout time.Duration) Option {
+    return Option{func(op *options) {
+        op.tcpWriteIdleTimeout = idleTimeout
+    }}
+}
+```
+
+* `tnet.WithTCPReadIdleTimeout` (v0.0.18) 设置了连接的读空闲超时时间，读空闲时间超过给定值时会自动断开连接
+
+```go
+// WithTCPReadIdleTimeout sets read idle timeout to close tcp connection.
+func WithTCPReadIdleTimeout(idleTimeout time.Duration) Option {
+    return Option{func(op *options) {
+        op.tcpReadIdleTimeout = idleTimeout
+    }}
 }
 ```
 
 * `tnet.WithOnTCPOpened` 可以设置 TCP 连接刚建立时需要进行的操作
 
-```golang
+```go
 // WithOnTCPOpened registers the OnTCPOpened method that is fired when connection is established.
 func WithOnTCPOpened(onTCPOpened OnTCPOpened) Option {
-	return Option{func(op *options) {
-		op.onTCPOpened = onTCPOpened
-	}}
+    return Option{func(op *options) {
+        op.onTCPOpened = onTCPOpened
+    }}
 }
 ```
 
 * `tnet.WithOnTCPClosed` 可以设置 TCP 连接断开时需要进行的操作
 
-```golang
+```go
 // WithOnTCPClosed registers the OnTCPClosed method that is fired when tcp connection is closed.
 func WithOnTCPClosed(onTCPClosed OnTCPClosed) Option {
-	return Option{func(op *options) {
-		op.onTCPClosed = onTCPClosed
-	}}
+    return Option{func(op *options) {
+        op.onTCPClosed = onTCPClosed
+    }}
 }
 ```
 
 * `tnet.WithTCPFlushWrite(true)` 使用户可以直接在当前业务协程中及时完成发包：
 
-```golang
+```go
 // WithTCPFlushWrite sets whether use flush write for TCP
 // connection or not. Default is notify.
 func WithTCPFlushWrite(flush bool) Option {
-	return Option{func(op *options) {
-		op.flushWrite = flush
-	}}
+    return Option{func(op *options) {
+        op.flushWrite = flush
+    }}
 }
 ```
 
 以分离模式为例，启用了 TCPFlushWrite 后的流程图如下所示：
 
-![](./docs/pics/mode2_flush.png)
+![mode2_flush](./docs/pics/mode2_flush.png)
 
-## 支持的 UDP Option 
+## 支持的 UDP Option
 
 * `tnet.WithOnUDPClosed` 可以设置 UDP 关闭时所需要进行的操作
 
-```golang
+```go
 // WithOnUDPClosed registers the OnUDPClosed method that is fired when udp connection is closed.
 func WithOnUDPClosed(onUDPClosed OnUDPClosed) Option {
-	return Option{func(op *options) {
-		op.onUDPClosed = onUDPClosed
-	}}
+    return Option{func(op *options) {
+        op.onUDPClosed = onUDPClosed
+    }}
 }
 ```
 
 * `tnet.WithMaxUDPPacketSize` 设置了 UDP 包的最大长度
 
-```golang
+```go
 // WithMaxUDPPacketSize sets maximal UDP packet size when receiving UDP packets.
 func WithMaxUDPPacketSize(size int) Option {
-	return Option{func(op *options) {
-		op.maxUDPPacketSize = size
-	}}
+    return Option{func(op *options) {
+        op.maxUDPPacketSize = size
+    }}
 }
 ```
 
-## 支持的 common Option 
+* `tnet.WithExactUDPBufferSizeEnabled` 设置了是否为 UDP 包分配恰好的缓存大小。
+
+```golang
+// WithExactUDPBufferSizeEnabled sets whether to allocate an exact-sized buffer for UDP packets, false in default.
+// If set to true, an exact-sized buffer is allocated for each UDP packet, requiring two system calls.
+// If set to false, a fixed buffer size of maxUDPPacketSize is used, 65536 in default, requiring only one system call.
+// This option should be used in conjunction with the ReadPacket method to properly read UDP packets.
+func WithExactUDPBufferSizeEnabled(exactUDPBufferSizeEnabled bool) Option {
+    return Option{func(op *options) {
+        op.exactUDPBufferSizeEnabled = exactUDPBufferSizeEnabled
+    }}
+}
+```
+
+## 支持的 common Option
 
 * `tnet.WithNonBlocking` 可以设置阻塞/非阻塞模式，也是控制 IO 处理是否在 Poller 协程内的一个选项，默认为阻塞模式，IO 处理不在 Poller 协程内
 
 ```golang
 // WithNonBlocking set conn/packconn to nonblocking mode
 func WithNonBlocking(nonblock bool) Option {
-	return Option{func(op *options) {
-		op.nonblocking = nonblock
-	}}
+    return Option{func(op *options) {
+        op.nonblocking = nonblock
+    }}
 }
 ```
 
@@ -173,7 +209,7 @@ func WithNonBlocking(nonblock bool) Option {
 
 * 包含的四个零拷贝 API 如下：
 
-```golang
+```go
 // Peek returns the next n bytes without advancing the reader. It waits until it has
 // read at least n bytes or error occurs such as connection closed or read timeout.
 // The bytes stop being valid at the next ReadN or Release call.
@@ -200,23 +236,23 @@ Release()
 > 3. Next：等价于先调用 Peek，然后调用 Skip，返回的 byte slice 会在 Release 的调用后失效
 > 4. Release：释放掉已经读过的部分，通常在使用完 byte slice 后使用，在调用安全 API Read/ReadN 时会自动调用 Release 来释放已读空间
 
-
-
 * `tnet.Conn` 提供了 `Writev`，用来依次写出多个数据块，比如包头和包体，不需要手动进行数据包的拼接，使用例子见 `examples/tcp/classical/main.go`
-```golang
+
+```go
 // Writev provides multiple data slice write in order.
 Writev(p ...[]byte) (int, error)
 ```
 
 * `tnet.Conn` 还提供了感知连接状态的方法：`IsActive`
-```golang
+
+```go
 // IsActive checks whether the connection is active or not.
 IsActive() bool
 ```
 
 * `tnet.Conn` 提供了 `SetMetaData/GetMetadata` 用于存储/读取用户在连接上的私有数据：
 
-```golang
+```go
 // SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
 SetMetaData(m interface{})
 // GetMetaData gets meta data.
@@ -227,4 +263,10 @@ GetMetaData() interface{}
 
 * tRPC-Go
 
-tRPC-Go 已经集成 tnet 
+tRPC-Go 已经即成 tnet
+
+## 实现细节
+
+* [整体结构](./docs/overview_cn.md)
+* [协程模型](./docs/models_cn.md)
+* [缓冲区设计](./docs/buffer_cn.md)

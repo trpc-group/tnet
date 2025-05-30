@@ -14,7 +14,6 @@
 package mcache_test
 
 import (
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,7 +45,7 @@ func Test_calIndex(t *testing.T) {
 	n = mcache.CalIndex(5)
 	assert.Equal(t, 3, n)
 	n = mcache.CalIndex(4096)
-	assert.Equal(t, math.Pow(2, float64(n)), float64(4096))
+	assert.Equal(t, 1<<n, 4096)
 }
 
 func BenchmarkNormal4096(b *testing.B) {

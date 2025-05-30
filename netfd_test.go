@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"trpc.group/trpc-go/tnet/internal/buffer"
 	"trpc.group/trpc-go/tnet/internal/netutil"
 )
 
@@ -98,33 +97,6 @@ func rawToNetFD(rawConn net.PacketConn) (*netFD, error) {
 	return nfd, nil
 }
 
-func Test_netFD_FillToBuffer(t *testing.T) {
-	rawConn, err := rawListenUDP("udp4")
-	assert.Nil(t, err)
-	defer rawConn.Close()
-	serverAddr := rawConn.LocalAddr()
-	nfd, err := rawToNetFD(rawConn)
-	assert.Nil(t, err)
-
-	p := []byte{3, 2, 1}
-	client, err := newUDPClient("udp4")
-	assert.Nil(t, err)
-	defer rawConn.Close()
-	defer client.Close()
-	clientAddr := client.LocalAddr()
-	client.WriteTo(p, serverAddr.String())
-
-	b := buffer.New()
-	err = nfd.FillToBuffer(b)
-	assert.Nil(t, err)
-
-	block, _ := b.ReadBlock()
-	s, addr, err := getUDPDataAndAddr(block)
-	assert.Nil(t, err)
-	assert.Equal(t, p, s)
-	assert.Equal(t, clientAddr, addr)
-}
-
 func Test_netFD_WriteToIPv4(t *testing.T) {
 	var serverAddr net.Addr
 	var clientAddr net.Addr
@@ -152,26 +124,4 @@ func Test_netFD_WriteToIPv4(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, len(helloWorld), n)
 	<-wait
-}
-
-func Test_netFD_WriteTo_err(t *testing.T) {
-	rawConn, err := rawListenUDP("udp4")
-	assert.Nil(t, err)
-	defer rawConn.Close()
-	nfd, err := rawToNetFD(rawConn)
-	assert.Nil(t, err)
-
-	_, err = nfd.WriteTo(helloWorld, nil)
-	assert.NotNil(t, err)
-
-	clientAddr := "127.0.0.1:0"
-	udpAddr, _ := net.ResolveUDPAddr("udp", clientAddr)
-	p := make([]byte, defaultUDPBufferSize+1)
-	_, err = nfd.WriteTo(p, udpAddr)
-	assert.NotNil(t, err)
-}
-
-func TestSetNoDelay_Error(t *testing.T) {
-	netFD := &netFD{}
-	assert.NotNil(t, netFD.SetNoDelay(false))
 }

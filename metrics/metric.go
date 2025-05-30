@@ -17,15 +17,16 @@
 package metrics
 
 import (
-	"fmt"
 	"time"
 
 	"go.uber.org/atomic"
+	"trpc.group/trpc-go/tnet/log"
 )
 
 // All metrics definitions.
 const (
-	// TCP metrics
+	// The following constants are TCP metrics.
+
 	TCPReadvCalls = iota
 	TCPReadvFails
 	TCPReadvBytes
@@ -40,21 +41,29 @@ const (
 	TCPPostponeWriteOff
 	TCPPostponeWriteOn
 
-	// UDP metrics
+	// The following constants are  UDP metrics.
+
 	UDPRecvMMsgCalls
 	UDPRecvMMsgFails
 	UDPRecvMMsgPackets
+	UDPRecvMsgCalls
+	UDPRecvMsgFails
+	UDPRecvMsgPackets
 	UDPWriteToCalls
 	UDPWriteToFails
 	UDPSendMMsgCalls
 	UDPSendMMsgFails
 	UDPSendMMsgPackets
 
-	// Epoll metrics
+	// The following constants are  Epoll metrics.
+
 	EpollWait
 	EpollNoWait
 	EpollEvents
 	TaskAssigned
+
+	// Keep it last.
+
 	Max
 )
 
@@ -107,60 +116,68 @@ func ShowMetrics() {
 }
 
 func showAll(m [Max]uint64) {
-	fmt.Println("######### tnet metrics (", time.Now().Format("2006-01-02 15:04:05"), ") ###########")
+	log.Debug("######### tnet metrics (", time.Now().Format("2006-01-02 15:04:05"), ") ###########")
 	showTCPMetrics(m)
 	showUDPMetrics(m)
 	showEpollMetrics(m)
-	fmt.Printf("%-59s: %d\n", "# number of task assigned (doTask)", m[TaskAssigned])
-	fmt.Printf("\n")
+	log.Debugf("%-59s: %d", "# number of task assigned (doTask)", m[TaskAssigned])
 }
 
 func showTCPMetrics(m [Max]uint64) {
-	fmt.Printf("%-59s: %d\n", "# TCP - number of Readv system calls", m[TCPReadvCalls])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of failed Readv system calls", m[TCPReadvFails])
+	log.Debugf("%-59s: %d", "# TCP - number of Readv system calls", m[TCPReadvCalls])
+	log.Debugf("%-59s: %d", "# TCP - number of failed Readv system calls", m[TCPReadvFails])
 	readvSucc := m[TCPReadvCalls] - m[TCPReadvFails]
 	if readvSucc > 0 {
-		fmt.Printf("%-59s: %dB\n", "# TCP - Readv efficiency", m[TCPReadvBytes]/readvSucc)
+		log.Debugf("%-59s: %dB", "# TCP - Readv efficiency", m[TCPReadvBytes]/readvSucc)
 	}
-	fmt.Printf("%-59s: %d\n", "# TCP - number of Writev system calls", m[TCPWritevCalls])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of blocks sent by Writev", m[TCPWritevBlocks])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of failed Writev system calls", m[TCPWritevFails])
+	log.Debugf("%-59s: %d", "# TCP - number of Writev system calls", m[TCPWritevCalls])
+	log.Debugf("%-59s: %d", "# TCP - number of blocks sent by Writev", m[TCPWritevBlocks])
+	log.Debugf("%-59s: %d", "# TCP - number of failed Writev system calls", m[TCPWritevFails])
 	writevSucc := m[TCPWritevCalls] - m[TCPWritevFails]
 	if writevSucc > 0 {
-		fmt.Printf("%-59s: %.2f\n", "# TCP - Writev efficiency", float64(m[TCPWritevBlocks])/float64(writevSucc))
+		log.Debugf("%-59s: %.2f", "# TCP - Writev efficiency", float64(m[TCPWritevBlocks])/float64(writevSucc))
 	}
-	fmt.Printf("%-59s: %d\n", "# TCP - number of epoll_ctl on write event", m[TCPWriteNotify])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of tcpOnWrite calls", m[TCPOnWriteCalls])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of connections created", m[TCPConnsCreate])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of connections closed", m[TCPConnsClose])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of times postpone write switched off", m[TCPPostponeWriteOff])
-	fmt.Printf("%-59s: %d\n", "# TCP - number of times postpone write switched on", m[TCPPostponeWriteOn])
+	log.Debugf("%-59s: %d", "# TCP - number of epoll_ctl on write event", m[TCPWriteNotify])
+	log.Debugf("%-59s: %d", "# TCP - number of tcpOnWrite calls", m[TCPOnWriteCalls])
+	log.Debugf("%-59s: %d", "# TCP - number of connections created", m[TCPConnsCreate])
+	log.Debugf("%-59s: %d", "# TCP - number of connections closed", m[TCPConnsClose])
+	log.Debugf("%-59s: %d", "# TCP - number of times postpone write switched off", m[TCPPostponeWriteOff])
+	log.Debugf("%-59s: %d", "# TCP - number of times postpone write switched on", m[TCPPostponeWriteOn])
 }
 
 func showUDPMetrics(m [Max]uint64) {
-	fmt.Printf("%-59s: %d\n", "# UDP - number of RecvMMsg system calls", m[UDPRecvMMsgCalls])
-	fmt.Printf("%-59s: %d\n", "# UDP - number of failed RecvMMsg system calls", m[UDPRecvMMsgFails])
+	// MMsg log.
+	log.Debugf("%-59s: %d", "# UDP - number of RecvMMsg system calls", m[UDPRecvMMsgCalls])
+	log.Debugf("%-59s: %d", "# UDP - number of failed RecvMMsg system calls", m[UDPRecvMMsgFails])
 	recvMMsgSucc := m[UDPRecvMMsgCalls] - m[UDPRecvMMsgFails]
 	if recvMMsgSucc > 0 {
-		fmt.Printf("%-59s: %.2f\n", "# UDP - RecvMMsg efficiency", float64(m[UDPRecvMMsgPackets])/float64(recvMMsgSucc))
+		log.Debugf("%-59s: %.2f", "# UDP - RecvMMsg efficiency", float64(m[UDPRecvMMsgPackets])/float64(recvMMsgSucc))
 	}
-	fmt.Printf("%-59s: %d\n", "# UDP - number of SendMMsg system calls", m[UDPSendMMsgCalls])
-	fmt.Printf("%-59s: %d\n", "# UDP - number of failed SendMMsg system calls", m[UDPSendMMsgFails])
+	log.Debugf("%-59s: %d", "# UDP - number of SendMMsg system calls", m[UDPSendMMsgCalls])
+	log.Debugf("%-59s: %d", "# UDP - number of failed SendMMsg system calls", m[UDPSendMMsgFails])
 	sendMMsgSucc := m[UDPSendMMsgCalls] - m[UDPSendMMsgFails]
 	if sendMMsgSucc > 0 {
-		fmt.Printf("%-59s: %.2f\n", "# UDP - SendMMsg efficiency", float64(m[UDPSendMMsgPackets])/float64(sendMMsgSucc))
+		log.Debugf("%-59s: %.2f", "# UDP - SendMMsg efficiency", float64(m[UDPSendMMsgPackets])/float64(sendMMsgSucc))
 	}
-	fmt.Printf("%-59s: %d\n", "# UDP - number of WriteTo system calls", m[UDPWriteToCalls])
-	fmt.Printf("%-59s: %d\n", "# UDP - number of failed WriteTo system calls", m[UDPWriteToFails])
+	// Msg log.
+	log.Debugf("%-59s: %d", "# UDP - number of RecvMsg system calls", m[UDPRecvMsgCalls])
+	log.Debugf("%-59s: %d", "# UDP - number of failed RecvMsg system calls", m[UDPRecvMsgFails])
+	recvMsgSucc := m[UDPRecvMsgCalls] - m[UDPRecvMsgFails]
+	if recvMsgSucc > 0 {
+		log.Debugf("%-59s: %.2f", "# UDP - RecvMsg efficiency", float64(m[UDPRecvMsgPackets])/float64(recvMsgSucc))
+	}
+	// UDP write log.
+	log.Debugf("%-59s: %d", "# UDP - number of WriteTo system calls", m[UDPWriteToCalls])
+	log.Debugf("%-59s: %d", "# UDP - number of failed WriteTo system calls", m[UDPWriteToFails])
 }
 
 func showEpollMetrics(m [Max]uint64) {
-	fmt.Printf("%-59s: %d\n", "# EPOLL - number of epoll_wait returns (tag:b)", m[EpollWait])
-	fmt.Printf("%-59s: %d\n", "# EPOLL - number of epoll_wait called with msc=0 (tag:a)", m[EpollNoWait])
-	fmt.Printf("%-59s: %d\n", "# EPOLL - number of total events", m[EpollEvents])
+	log.Debugf("%-59s: %d", "# EPOLL - number of epoll_wait returns (tag:b)", m[EpollWait])
+	log.Debugf("%-59s: %d", "# EPOLL - number of epoll_wait called with msc=0 (tag:a)", m[EpollNoWait])
+	log.Debugf("%-59s: %d", "# EPOLL - number of total events", m[EpollEvents])
 	if (m[EpollWait]) > 0 {
-		fmt.Printf("%-59s: %.2f%%\n", "# EPOLL - a/b * 100%", float32(m[EpollNoWait])*100/float32(m[EpollWait]))
-		fmt.Printf("%-59s: %.2f\n", "# EPOLL - average events number per epoll_wait",
+		log.Debugf("%-59s: %.2f%%", "# EPOLL - a/b * 100%", float32(m[EpollNoWait])*100/float32(m[EpollWait]))
+		log.Debugf("%-59s: %.2f", "# EPOLL - average events number per epoll_wait",
 			float32(m[EpollEvents])/float32(m[EpollWait]))
 	}
 }

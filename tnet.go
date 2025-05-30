@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	// Stat reports user statistics.
+	_ "trpc.group/trpc-go/tnet/internal/stat"
 )
 
 // BaseConn is common for stream and packet oriented network connection.
@@ -42,10 +45,10 @@ type BaseConn interface {
 	SetFlushWrite(flushWrite bool)
 
 	// SetMetaData sets metadata. Through this method, users can bind some custom data to a connection.
-	SetMetaData(m any)
+	SetMetaData(m interface{})
 
 	// GetMetaData gets metadata.
-	GetMetaData() any
+	GetMetaData() interface{}
 }
 
 // Conn is generic for stream oriented network connection.
@@ -100,6 +103,12 @@ type Conn interface {
 	// SetIdleTimeout sets the idle timeout to close connection.
 	SetIdleTimeout(d time.Duration) error
 
+	// SetWriteIdleTimeout sets the write idle timeout to close connection.
+	SetWriteIdleTimeout(d time.Duration) error
+
+	// SetReadIdleTimeout sets the read idle timeout to close connection.
+	SetReadIdleTimeout(d time.Duration) error
+
 	// SetSafeWrite sets whether writing on connection is safe or not.
 	// Default is unsafe.
 	//
@@ -108,7 +117,7 @@ type Conn interface {
 	//     be handled by tnet, which means users cannot reuse the buffers after passing
 	//     them into Write/Writev.
 	//   If safeWrite = true: the given buffers is copied into tnet's own buffer.
-	//     Therefore users can reuse the buffers passed into Write/Writev.
+	//     Therefore, users can reuse the buffers passed into Write/Writev.
 	SetSafeWrite(safeWrite bool)
 }
 
@@ -116,7 +125,7 @@ type Conn interface {
 type Service interface {
 	// Serve registers a listener and runs blockingly to provide service, including listening to ports,
 	// accepting connections and reading trans data.
-	// Param ctx is used to shutdown the service with all connections gracefully.
+	// Param ctx is used to shut down the service with all connections gracefully.
 	Serve(ctx context.Context) error
 }
 
@@ -157,6 +166,12 @@ type PacketConn interface {
 	// SetOnClosed sets the additional close process for a connection.
 	// Handle is executed when the connection is closed.
 	SetOnClosed(handle OnUDPClosed) error
+
+	// SetExactUDPBufferSizeEnabled set whether to allocate an exact-sized buffer for UDP packets, false in default.
+	// If set to true, an exact-sized buffer is allocated for each UDP packet, requiring two system calls.
+	// If set to false, a fixed buffer size of maxUDPPacketSize is used, 65536 in default, requiring only one system call.
+	// This option should be used in conjunction with the ReadPacket method to properly read UDP packets.
+	SetExactUDPBufferSizeEnabled(exactUDPBufferSizeEnabled bool)
 }
 
 // Packet represents a UDP packet, created by PacketConn Zero-Copy API ReadPacket.
@@ -171,8 +186,8 @@ type Packet interface {
 }
 
 // ListenPackets announces on the local network address. Reuseport sets whether to enable
-// reuseport when creating PacketConns, it will return multiple PacketConn if reuseprot is true.
-// Generally, enabling reuseport can make effective use of multi-core and improve performance.
+// reuseport when creating PacketConns, it will return multiple PacketConn if reuseport is true.
+// Generally, enabling reuseport can make effective use of multicore and improve performance.
 func ListenPackets(network, address string, reuseport bool) ([]PacketConn, error) {
 	return listenUDP(network, address, reuseport)
 }

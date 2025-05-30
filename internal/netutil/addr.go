@@ -289,16 +289,60 @@ func hasIPv6Addr() bool {
 }
 
 // AddrToSockAddr convert net addr to sockAddr
-func AddrToSockAddr(addr net.Addr) (unix.Sockaddr, error) {
-	switch addr := addr.(type) {
+func AddrToSockAddr(laddr net.Addr, raddr net.Addr) (unix.Sockaddr, error) {
+	switch raddr := raddr.(type) {
 	case *net.TCPAddr:
-		family := getFamily(addr.IP)
-		return ipToSockaddr(family, addr.IP, addr.Port, addr.Zone)
+		return tcpAddrToSockAddr(laddr, raddr)
 	case *net.UDPAddr:
-		family := getFamily(addr.IP)
-		return ipToSockaddr(family, addr.IP, addr.Port, addr.Zone)
+		return udpAddrToSockAddr(laddr, raddr)
 	default:
 		return nil, errors.New("addr type is not support")
+	}
+}
+
+func tcpAddrToSockAddr(laddr net.Addr, raddr net.Addr) (unix.Sockaddr, error) {
+	lTCPAddr, lok := laddr.(*net.TCPAddr)
+	rTCPAddr, rok := raddr.(*net.TCPAddr)
+	if !lok || !rok {
+		return nil, fmt.Errorf("laddr and raddr are not both tcp addr, laddr is %T, raddr is %T", laddr, raddr)
+	}
+	family, err := getAndCompareFamily(lTCPAddr.IP, rTCPAddr.IP)
+	if err != nil {
+		return nil, fmt.Errorf("get and compare family of laddr and raddr: %w", err)
+	}
+	return ipToSockaddr(family, rTCPAddr.IP, rTCPAddr.Port, rTCPAddr.Zone)
+}
+
+func udpAddrToSockAddr(laddr net.Addr, raddr net.Addr) (unix.Sockaddr, error) {
+	lUDPAddr, lOK := laddr.(*net.UDPAddr)
+	rUDPAddr, rOK := raddr.(*net.UDPAddr)
+	if !lOK || !rOK {
+		return nil, fmt.Errorf("laddr and raddr are not both udp addr, laddr is %T, raddr is %T", laddr, raddr)
+	}
+	family, err := getAndCompareFamily(lUDPAddr.IP, rUDPAddr.IP)
+	if err != nil {
+		return nil, fmt.Errorf("get and compare family of laddr and raddr: %w", err)
+	}
+	return ipToSockaddr(family, rUDPAddr.IP, rUDPAddr.Port, rUDPAddr.Zone)
+}
+
+func getAndCompareFamily(lIP net.IP, rIP net.IP) (int, error) {
+	lFamily, rFamily := getFamily(lIP), getFamily(rIP)
+	if lFamily != rFamily {
+		return -1, fmt.Errorf("IP family mismatch: laddr family is %v(%v), raddr family is %v(%v)",
+			family2String(lFamily), lFamily, family2String(rFamily), rFamily)
+	}
+	return rFamily, nil
+}
+
+func family2String(family int) string {
+	switch family {
+	case unix.AF_INET:
+		return "AF_INET"
+	case unix.AF_INET6:
+		return "AF_INET6"
+	default:
+		return "UNKOWN"
 	}
 }
 

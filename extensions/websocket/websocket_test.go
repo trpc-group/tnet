@@ -14,6 +14,7 @@
 package websocket_test
 
 import (
+	"bytes"
 	"context"
 	stdtls "crypto/tls"
 	"errors"
@@ -23,24 +24,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"trpc.group/trpc-go/tnet"
 	"trpc.group/trpc-go/tnet/extensions/websocket"
 )
 
 var (
-	wsListenAddr  = ":9980"
-	wssListenAddr = ":9443"
-	wsURL         = "ws://127.0.0.1:9980"
-	wssURL        = "wss://127.0.0.1:9443"
-	hello         = []byte("hello")
-	world         = []byte("world!")
+	wsURLPrefix  = "ws://"
+	wssURLPrefix = "wss://"
+	hello        = []byte("hello")
+	world        = []byte("world!")
 )
 
 func TestClientHandle(t *testing.T) {
 	var conns []websocket.Conn
 	done := make(chan struct{})
-	cancel := runServer(t, wsListenAddr, func(conn websocket.Conn) error {
+	addr, cancel := runServer(t, func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()
 		require.Nil(t, err)
 		require.Equal(t, websocket.Text, tp)
@@ -50,7 +50,7 @@ func TestClientHandle(t *testing.T) {
 		conns = append(conns, c)
 		return nil
 	}))
-	clientConn, err := websocket.Dial(wsURL)
+	clientConn, err := websocket.Dial(wsURLPrefix + addr)
 	require.Nil(t, err)
 	clientHandle := func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()
@@ -75,7 +75,9 @@ func TestClientHandle(t *testing.T) {
 func TestServer(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()
-		require.Nil(t, err)
+		if err != nil {
+			return err
+		}
 		require.Equal(t, websocket.Text, tp)
 		require.Nil(t, conn.WriteMessage(websocket.Text, buf))
 		return nil
@@ -91,7 +93,9 @@ func TestServer(t *testing.T) {
 func TestServerBinary(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()
-		require.Nil(t, err)
+		if err != nil {
+			return err
+		}
 		require.Equal(t, websocket.Binary, tp)
 		require.Nil(t, conn.WriteMessage(websocket.Binary, buf))
 		return nil
@@ -147,19 +151,23 @@ func TestConcurrentReadWrite(t *testing.T) {
 
 func TestOptions(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
-		require.NotNil(t, conn.LocalAddr())
-		require.NotNil(t, conn.RemoteAddr())
-		require.Nil(t, conn.SetDeadline(time.Now().Add(time.Second)))
-		require.Nil(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
-		require.Nil(t, conn.SetWriteDeadline(time.Now().Add(time.Second)))
-		require.Nil(t, conn.SetIdleTimeout(time.Second))
+		assert.NotNil(t, conn.LocalAddr())
+		assert.NotNil(t, conn.RemoteAddr())
+		assert.Nil(t, conn.SetDeadline(time.Now().Add(time.Second)))
+		assert.Nil(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+		assert.Nil(t, conn.SetWriteDeadline(time.Now().Add(time.Second)))
+		assert.Nil(t, conn.SetIdleTimeout(time.Second))
+		assert.Nil(t, conn.SetReadIdleTimeout(time.Second))
+		assert.Nil(t, conn.SetWriteIdleTimeout(time.Second))
 		data, ok := conn.GetMetaData().([]byte)
-		require.True(t, ok)
-		require.Equal(t, string(hello), string(data))
+		assert.True(t, ok)
+		assert.Equal(t, string(hello), string(data))
 		tp, buf, err := conn.ReadMessage()
-		require.Nil(t, err)
-		require.Equal(t, websocket.Binary, tp)
-		require.Nil(t, conn.WriteMessage(websocket.Binary, buf))
+		if err != nil {
+			return err
+		}
+		assert.Equal(t, websocket.Binary, tp)
+		assert.Nil(t, conn.WriteMessage(websocket.Binary, buf))
 		return nil
 	}, func(conn websocket.Conn) error {
 		require.Nil(t, conn.WriteMessage(websocket.Binary, world))
@@ -192,12 +200,14 @@ func TestOptions(t *testing.T) {
 func TestNextMessageReaderWriter(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, r, err := conn.NextMessageReader()
-		require.Nil(t, err)
-		require.Equal(t, websocket.Text, tp)
+		if errors.Is(err, tnet.ErrConnClosed) {
+			return nil
+		}
+		assert.Equal(t, websocket.Text, tp)
 		data, err := io.ReadAll(r)
-		require.Nil(t, err)
-		require.Equal(t, string(hello), string(data))
-		require.Nil(t, conn.WriteMessage(tp, data))
+		assert.Nil(t, err)
+		assert.Equal(t, string(hello), string(data))
+		assert.Nil(t, conn.WriteMessage(tp, data))
 		return nil
 	}, func(conn websocket.Conn) error {
 		w, err := conn.NextMessageWriter(websocket.Text)
@@ -220,6 +230,9 @@ func TestNextMessageReaderWriter(t *testing.T) {
 func TestWritev(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, data, err := conn.ReadMessage()
+		if errors.Is(err, tnet.ErrConnClosed) {
+			return nil
+		}
 		require.Nil(t, err)
 		require.Equal(t, websocket.Binary, tp)
 		require.Equal(t, append(hello, world...), data)
@@ -239,8 +252,10 @@ func TestSubProtocols(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		require.Equal(t, "superchat", conn.Subprotocol())
 		tp, data, err := conn.ReadMessage()
-		require.Nil(t, err)
-		require.Nil(t, conn.WriteMessage(tp, data))
+		if errors.Is(err, tnet.ErrConnClosed) {
+			return nil
+		}
+		assert.Nil(t, conn.WriteMessage(tp, data))
 		return nil
 	}, func(conn websocket.Conn) error {
 		require.Equal(t, "superchat", conn.Subprotocol())
@@ -348,6 +363,73 @@ func TestReadWriteWithNoMessageType(t *testing.T) {
 	}, nil)
 }
 
+func BenchmarkWriteMessage(b *testing.B) {
+	payloads := map[string][]byte{
+		"2b":    []byte("hi"),                         // 2 bytes
+		"11b":   []byte("hello world"),                // 11 bytes
+		"128b":  bytes.Repeat([]byte("hello"), 25),    // ~128 bytes
+		"256b":  bytes.Repeat([]byte("hello"), 50),    // ~256 bytes
+		"512b":  bytes.Repeat([]byte("hello"), 100),   // ~512 bytes
+		"768b":  bytes.Repeat([]byte("hello"), 150),   // ~768 bytes
+		"896b":  bytes.Repeat([]byte("hello"), 175),   // ~896 bytes
+		"1024b": bytes.Repeat([]byte("hello"), 200),   // ~1024 bytes (1KB)
+		"1152b": bytes.Repeat([]byte("hello"), 225),   // ~1152 bytes
+		"1280b": bytes.Repeat([]byte("hello"), 250),   // ~1280 bytes
+		"1408b": bytes.Repeat([]byte("hello"), 275),   // ~1408 bytes
+		"1536b": bytes.Repeat([]byte("hello"), 300),   // ~1536 bytes
+		"2048b": bytes.Repeat([]byte("hello"), 400),   // ~2048 bytes (2KB)
+		"4k":    bytes.Repeat([]byte("hello"), 800),   // ~4KB
+		"8k":    bytes.Repeat([]byte("hello"), 1600),  // ~8KB
+		"16k":   bytes.Repeat([]byte("hello"), 3200),  // ~16KB
+		"32k":   bytes.Repeat([]byte("hello"), 6400),  // ~32KB
+		"64k":   bytes.Repeat([]byte("hello"), 12800), // ~64KB
+		"128k":  bytes.Repeat([]byte("hello"), 25600), // ~128KB
+	}
+
+	cases := []struct {
+		name          string
+		combineWrites bool
+	}{
+		{"legacy_mode", false},
+		{"combined_writes", true},
+	}
+
+	for size, payload := range payloads {
+		b.Run(size, func(b *testing.B) {
+			for _, tc := range cases {
+				b.Run(tc.name, func(b *testing.B) {
+					done := make(chan struct{})
+					addr, cancel := runBenchServer(b, func(c websocket.Conn) error {
+						io.Copy(io.Discard, c)
+						return nil
+					}, done)
+					defer cancel()
+
+					url := "ws://" + addr
+					opts := []websocket.ClientOption{
+						websocket.WithClientCombinedWrites(tc.combineWrites),
+					}
+					c, err := websocket.Dial(url, opts...)
+					if err != nil {
+						b.Fatal(err)
+					}
+					defer c.Close()
+
+					b.ResetTimer()
+					b.SetBytes(int64(len(payload)))
+					for i := 0; i < b.N; i++ {
+						if err := c.WriteMessage(websocket.Binary, payload); err != nil {
+							b.Fatal(err)
+						}
+					}
+					cancel()
+					<-done
+				})
+			}
+		})
+	}
+}
+
 func runTestWithHandles(
 	t *testing.T,
 	serverHandle websocket.Handler,
@@ -377,8 +459,8 @@ func runWSTestWithHandles(
 	opts ...websocket.ServerOption,
 ) {
 	done := make(chan struct{})
-	cancel := runServer(t, wsListenAddr, serverHandle, done, opts...)
-	conn, err := websocket.Dial(wsURL, dialOpts...)
+	addr, cancel := runServer(t, serverHandle, done, opts...)
+	conn, err := websocket.Dial(wsURLPrefix+addr, dialOpts...)
 	require.Nil(t, err)
 	require.Nil(t, clientHandle(conn))
 	cancel()
@@ -393,22 +475,23 @@ func runWSSTestWithHandles(
 	opts ...websocket.ServerOption,
 ) {
 	done := make(chan struct{})
-	cancel := runServer(t, wssListenAddr, serverHandle, done, opts...)
-	conn, err := websocket.Dial(wssURL, dialOpts...)
+	addr, cancel := runServer(t, serverHandle, done, opts...)
+	time.Sleep(10 * time.Millisecond)
+	conn, err := websocket.Dial(wssURLPrefix+addr, dialOpts...)
 	require.Nil(t, err)
-	require.Nil(t, clientHandle(conn))
+	err = clientHandle(conn)
+	require.Nil(t, err, "handler err: %+v", err)
 	cancel()
 	<-done
 }
 
 func runServer(
 	t *testing.T,
-	addr string,
 	h websocket.Handler,
 	done chan struct{},
 	opts ...websocket.ServerOption,
-) context.CancelFunc {
-	ln, err := tnet.Listen("tcp", addr)
+) (string, context.CancelFunc) {
+	ln, err := tnet.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Log("tnet.Listen", err)
 	}
@@ -420,5 +503,27 @@ func runServer(
 		s.Serve(ctx)
 		done <- struct{}{}
 	}()
-	return cancel
+	return ln.Addr().String(), cancel
+}
+
+func runBenchServer(
+	b *testing.B,
+	h websocket.Handler,
+	done chan struct{},
+	opts ...websocket.ServerOption,
+) (string, context.CancelFunc) {
+	ln, err := tnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	s, err := websocket.NewService(ln, h, opts...)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		s.Serve(ctx)
+		done <- struct{}{}
+	}()
+	return ln.Addr().String(), cancel
 }

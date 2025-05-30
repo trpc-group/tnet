@@ -16,6 +16,15 @@
 
 package systype
 
+import "golang.org/x/sys/unix"
+
+// MMsghdr is the input parameter of recvmmsg.
+type MMsghdr struct {
+	Hdr unix.Msghdr
+	Len uint32
+	_   [4]byte // Pad with 4 bytes to align 64bit machine.
+}
+
 func convertUint(i int) uint64 {
 	return uint64(i)
 }

@@ -65,11 +65,11 @@ func Stop() {
 }
 
 // Callback is asynchronous callback function when timer expired.
-type Callback func(data any)
+type Callback func(data interface{})
 
 // Timer is an async timer.
 type Timer struct {
-	data          any
+	data          interface{}
 	expiredHandle Callback
 	begin         atomic.Time
 	circle        int
@@ -81,14 +81,13 @@ type Timer struct {
 // NewTimer creates an async timer with data and expiredHandle function. After timeout
 // time, the timer will be expired, and expiredHandle will be called with argument data.
 // Note that the timer becomes effective after having been added to time wheel.
-func NewTimer(data any, expiredHandle Callback, timeout time.Duration) *Timer {
-	t := &Timer{
+func NewTimer(data interface{}, expiredHandle Callback, timeout time.Duration) *Timer {
+	return &Timer{
 		data:          data,
 		expiredHandle: expiredHandle,
 		timeout:       timeout,
 		delay:         timeout,
 	}
-	return t
 }
 
 // TimeWheel manages all async timers.
@@ -142,12 +141,16 @@ func (t *TimeWheel) Start() {
 func (t *TimeWheel) Add(timer *Timer) error {
 	if timer.isActive {
 		timer.begin.Store(t.now)
+		// Reset timer delay to timer timeout.
+		timer.delay = timer.timeout
 		return nil
 	}
 	if timer.delay < t.interval {
 		return ErrShortDelay
 	}
 	timer.isActive = true
+	// Reset timer delay to timer timeout.
+	timer.delay = timer.timeout
 	timer.delay = timer.delay.Round(t.interval)
 	timer.begin.Store(t.now)
 	t.timersToAdd <- timer
@@ -218,12 +221,12 @@ func (t *TimeWheel) checkExpire(timer *Timer) {
 		return
 	}
 	actual := t.now.Sub(timer.begin.Load())
-	// expired
-	if actual >= timer.delay {
+	// Expired.
+	if actual >= timer.timeout {
 		timer.expiredHandle(timer.data)
 		return
 	}
-	// not expired, add timer to time wheel again
+	// Not expired, add timer to time wheel again.
 	timer.delay = timer.timeout - actual
 	if err := t.Add(timer); err != nil {
 		timer.expiredHandle(timer.data)
@@ -241,8 +244,8 @@ func (t *TimeWheel) addTimerHandle(timer *Timer) {
 func (t *TimeWheel) calIndexAndCircle(timer *Timer) (int, int) {
 	delay := int(timer.delay.Milliseconds())
 	interval := int(t.interval.Milliseconds())
-	index := int(t.currSlot+delay/interval) % t.slotNum
-	circle := int((delay - interval) / interval / t.slotNum)
+	index := (t.currSlot + delay/interval) % t.slotNum
+	circle := (delay - interval) / interval / t.slotNum
 	return index, circle
 }
 
@@ -255,9 +258,7 @@ type slot struct {
 }
 
 func newSlot() *slot {
-	s := &slot{}
-	s.timers = make(map[*Timer]struct{})
-	return s
+	return &slot{timers: make(map[*Timer]struct{})}
 }
 
 func (s *slot) add(t *Timer) {

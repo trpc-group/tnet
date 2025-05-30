@@ -16,7 +16,9 @@
 
 package netutil
 
-import "golang.org/x/sys/unix"
+import (
+	"golang.org/x/sys/unix"
+)
 
 // SetKeepAlive turns on keep-alive option for fd and sets the keep-alive interval.
 func SetKeepAlive(fd, secs int) error {

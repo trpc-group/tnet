@@ -171,33 +171,76 @@ func TestSockaddrSliceToUDPAddr_Error(t *testing.T) {
 }
 
 func TestAddrToSockAddr(t *testing.T) {
-	addr4, _ := net.ResolveUDPAddr("udp4", "127.0.0.1:51624")
-	sa, err := netutil.AddrToSockAddr(addr4)
-	assert.Nil(t, err)
-	sa4, ok := sa.(*unix.SockaddrInet4)
-	assert.Equal(t, true, ok)
-	assert.Equal(t, 51624, sa4.Port)
-	assert.Equal(t, [4]byte{127, 0, 0, 1}, sa4.Addr)
-
-	addr6, _ := net.ResolveTCPAddr("tcp6", "[2001:4860:0:2001::68]:9090")
-	sa, err = netutil.AddrToSockAddr(addr6)
-	assert.Nil(t, err)
-	sa6, ok := sa.(*unix.SockaddrInet6)
-	assert.Equal(t, true, ok)
-	assert.Equal(t, 9090, sa6.Port)
-	assert.Equal(t, [16]byte{0x20, 0x01, 0x48, 0x60, 0, 0, 0x20, 0x01, 0, 0, 0, 0, 0, 0, 0x00, 0x68}, sa6.Addr)
-
-	addrIP, _ := net.ResolveIPAddr("IP", "127.0.0.1:51624")
-	_, err = netutil.AddrToSockAddr(addrIP)
-	assert.NotNil(t, err)
+	t.Run("both udp4", func(t *testing.T) {
+		laddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:1234")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:51624")
+		assert.Nil(t, err)
+		sa, err := netutil.AddrToSockAddr(laddr, raddr)
+		assert.Nil(t, err)
+		sa4, ok := sa.(*unix.SockaddrInet4)
+		assert.Equal(t, true, ok)
+		assert.Equal(t, 51624, sa4.Port)
+		assert.Equal(t, [4]byte{127, 0, 0, 1}, sa4.Addr)
+	})
+	t.Run("both tcp6", func(t *testing.T) {
+		laddr, err := net.ResolveTCPAddr("tcp6", "[2001:4860:0:2001::68]:1234")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveTCPAddr("tcp6", "[2001:4860:0:2001::68]:9090")
+		assert.Nil(t, err)
+		sa, err := netutil.AddrToSockAddr(laddr, raddr)
+		assert.Nil(t, err)
+		sa6, ok := sa.(*unix.SockaddrInet6)
+		assert.Equal(t, true, ok)
+		assert.Equal(t, 9090, sa6.Port)
+		assert.Equal(t, [16]byte{0x20, 0x01, 0x48, 0x60, 0, 0, 0x20, 0x01, 0, 0, 0, 0, 0, 0, 0x00, 0x68}, sa6.Addr)
+	})
+	t.Run("udp4 laddr and udp6 raddr", func(t *testing.T) {
+		laddr, err := net.ResolveUDPAddr("udp6", "[2001:4860:0:2001::68]:1234")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		_, err = netutil.AddrToSockAddr(laddr, raddr)
+		assert.NotNil(t, err)
+	})
+	t.Run("tcp4 laddr and tcp6 raddr", func(t *testing.T) {
+		laddr, err := net.ResolveTCPAddr("tcp6", "[2001:4860:0:2001::68]:1234")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		_, err = netutil.AddrToSockAddr(laddr, raddr)
+		assert.NotNil(t, err)
+	})
+	t.Run("udp laddr and tcp raddr", func(t *testing.T) {
+		laddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		_, err = netutil.AddrToSockAddr(laddr, raddr)
+		assert.NotNil(t, err)
+	})
+	t.Run("tcp laddr and udp raddr", func(t *testing.T) {
+		laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		raddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8080")
+		assert.Nil(t, err)
+		_, err = netutil.AddrToSockAddr(laddr, raddr)
+		assert.NotNil(t, err)
+	})
+	t.Run("invalid network", func(t *testing.T) {
+		addrIP, _ := net.ResolveIPAddr("IP", "127.0.0.1:51624")
+		_, err := netutil.AddrToSockAddr(nil, addrIP)
+		assert.NotNil(t, err)
+	})
 }
 
-func getUnixSockaddr(network, address string) (unix.Sockaddr, error) {
-	addr, err := net.ResolveTCPAddr(network, address)
+func getUnixSockaddr(network, laddr, raddr string) (unix.Sockaddr, error) {
+	lTCPAddr, _ := net.ResolveTCPAddr(network, laddr)
+	rTCPAddr, err := net.ResolveTCPAddr(network, raddr)
 	if err != nil {
 		return nil, err
 	}
-	sa, err := netutil.AddrToSockAddr(addr)
+	sa, err := netutil.AddrToSockAddr(lTCPAddr, rTCPAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +249,12 @@ func getUnixSockaddr(network, address string) (unix.Sockaddr, error) {
 
 func TestUnixSockaddrToSockaddrSlice(t *testing.T) {
 	sa := make([]byte, netutil.SockaddrSize)
-	unixsa, err := getUnixSockaddr("tcp4", "127.0.0.1:12345")
+	unixsa, err := getUnixSockaddr("tcp4", "127.0.0.1:8080", "127.0.0.1:12345")
 	assert.Nil(t, err)
 	err = netutil.UnixSockaddrToSockaddrSlice(unixsa, sa)
 	assert.Nil(t, err)
 
-	unixsa6, err := getUnixSockaddr("tcp6", "[2001:4860:0:2001::68]:54321")
+	unixsa6, err := getUnixSockaddr("tcp6", "[2001:4860:0:2001::68]:8080", "[2001:4860:0:2001::68]:54321")
 	assert.Nil(t, err)
 	err = netutil.UnixSockaddrToSockaddrSlice(unixsa6, sa)
 	assert.Nil(t, err)

@@ -42,7 +42,7 @@ func NewService(ln net.Listener, handler Handler, opts ...ServerOption) (tnet.Se
 			tls.WithServerIdleTimeout(options.idleTimeout),
 			tls.WithServerTLSConfig(options.tlsConfig),
 			tls.WithOnClosed(onClosedTLS(options.onClosed)),
-			tls.WithServerFlushWrite(true), // enable flushwrite for websocket.
+			tls.WithServerFlushWrite(true), // Enable flush write for websocket.
 		)
 	}
 	return tnet.NewTCPService(ln, func(c tnet.Conn) error {
@@ -50,7 +50,7 @@ func NewService(ln net.Listener, handler Handler, opts ...ServerOption) (tnet.Se
 	}, tnet.WithTCPKeepAlive(options.keepAlive),
 		tnet.WithTCPIdleTimeout(options.idleTimeout),
 		tnet.WithOnTCPClosed(onClosed(options.onClosed)),
-		tnet.WithFlushWrite(true), // enable flushwrite for websocket.
+		tnet.WithFlushWrite(true), // Enable flushwrite for websocket.
 	)
 }
 
@@ -95,7 +95,7 @@ func RemoteAddrFromContext(ctx context.Context) (net.Addr, bool) {
 
 func handleWithOptions(c rawConnection, handler Handler, options *serverOptions) error {
 	if c.GetMetaData() == nil {
-		// connection has not been upgraded to websocket.
+		// Connection has not been upgraded to websocket.
 		upgrader := ws.Upgrader{
 			Protocol:       options.protocolSelect,
 			ProtocolCustom: options.protocolCustom,
@@ -112,12 +112,13 @@ func handleWithOptions(c rawConnection, handler Handler, options *serverOptions)
 			return errors.Wrap(err, "websocket upgrade")
 		}
 		wc := &conn{
-			raw:         c,
-			role:        ws.StateServerSide,
-			subprotocol: handshake.Protocol,
-			pingHandler: options.pingHandler,
-			pongHandler: options.pongHandler,
-			messageType: options.messageType,
+			raw:           c,
+			role:          ws.StateServerSide,
+			subprotocol:   handshake.Protocol,
+			pingHandler:   options.pingHandler,
+			pongHandler:   options.pongHandler,
+			messageType:   options.messageType,
+			combineWrites: options.combineWrites,
 		}
 		c.SetMetaData(wc)
 		return options.afterHandshake(ctx, wc)

@@ -1,4 +1,4 @@
-English | [中文](README.zh_CN.md)
+English | [中文](README_cn.md)
 
 # TLS examples: echo
 

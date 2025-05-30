@@ -34,12 +34,12 @@ func Accept(fd int) (int, unix.Sockaddr, error) {
 	switch err {
 	case nil:
 		return ns, sa, nil
-	default: // errors other than the ones listed
-		return -1, sa, err
 	case syscall.ENOSYS: // syscall missing
 	case syscall.EINVAL: // some Linux use this instead of ENOSYS
 	case syscall.EACCES: // some Linux use this instead of ENOSYS
 	case syscall.EFAULT: // some Linux use this instead of ENOSYS
+	default: // errors other than the ones listed
+		return -1, sa, err
 	}
 
 	// See ../syscall/exec_unix.go for description of ForkLock.

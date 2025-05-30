@@ -3,12 +3,13 @@ module trpc.group/trpc-go/tnet
 go 1.18
 
 require (
+	github.com/kavu/go_reuseport v1.5.0
 	github.com/panjf2000/ants/v2 v2.4.6
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.0
-	go.uber.org/atomic v1.9.0
+	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/sys v0.0.0-20220624220833-87e55d714810
+	golang.org/x/sys v0.21.0
 )
 
 require (

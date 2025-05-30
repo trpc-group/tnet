@@ -51,7 +51,10 @@ func TestTNETOptions(t *testing.T) {
 	WithFlushWrite(true).f(opts)
 
 	WithSafeWrite(true).f(opts)
-	assert.Equal(t, true, opts.safeWrite)
+	assert.True(t, opts.safeWrite)
+
+	WithExactUDPBufferSizeEnabled(true).f(opts)
+	assert.True(t, opts.exactUDPBufferSizeEnabled)
 }
 
 func onTCPClosed(conn Conn) error {

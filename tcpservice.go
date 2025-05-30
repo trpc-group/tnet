@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"go.uber.org/atomic"
 	"trpc.group/trpc-go/tnet/internal/iovec"
 	"trpc.group/trpc-go/tnet/internal/netutil"
 	"trpc.group/trpc-go/tnet/internal/poller"
+	"trpc.group/trpc-go/tnet/internal/stat"
 	"trpc.group/trpc-go/tnet/log"
 )
 
@@ -71,6 +73,12 @@ func newTCPService(ln *tcpListener, handler TCPHandler, opt ...Option) (Service,
 	return s, nil
 }
 
+const (
+	initialTempDelay    = 5 * time.Millisecond
+	maxTempDelay        = time.Second
+	tempDelayMultiplier = 2
+)
+
 type tcpservice struct {
 	ln        *tcpListener
 	reqHandle TCPHandler
@@ -78,11 +86,14 @@ type tcpservice struct {
 	conns     map[int]*tcpconn
 	opts      options
 	closed    atomic.Bool
+	tempDelay time.Duration
 	mu        sync.Mutex
 }
 
 // Serve starts the service.
 func (s *tcpservice) Serve(ctx context.Context) error {
+	stat.Report(stat.ServerAttr, stat.TCPAttr)
+
 	if err := s.ln.nfd.Schedule(tcpServiceOnRead, nil, tcpServiceOnHup, s); err != nil {
 		return err
 	}
@@ -111,7 +122,7 @@ func (s *tcpservice) close() error {
 
 // tcpServiceOnRead is triggered by the tcp listener read event,
 // which means that "accept" needs to be handled.
-func tcpServiceOnRead(data any, _ *iovec.IOData) error {
+func tcpServiceOnRead(data interface{}, _ *iovec.IOData) error {
 	s, ok := data.(*tcpservice)
 	if !ok || s == nil {
 		panic(fmt.Sprintf("bug: data is not *tcpservice type (%v) or s is nil pointer (%v)", !ok, s == nil))
@@ -133,6 +144,12 @@ func tcpServiceOnRead(data any, _ *iovec.IOData) error {
 		if err := tconn.SetIdleTimeout(s.opts.tcpIdleTimeout); err != nil {
 			return fmt.Errorf("tnet connection set idle timeout error: %w", err)
 		}
+		if err := tconn.SetWriteIdleTimeout(s.opts.tcpWriteIdleTimeout); err != nil {
+			return fmt.Errorf("tnet connection set write idle timeout error: %w", err)
+		}
+		if err := tconn.SetReadIdleTimeout(s.opts.tcpReadIdleTimeout); err != nil {
+			return fmt.Errorf("tnet connection set read idle timeout error: %w", err)
+		}
 		tconn.SetNonBlocking(s.opts.nonblocking)
 		tconn.SetSafeWrite(s.opts.safeWrite)
 		if s.opts.onTCPClosed != nil {
@@ -147,15 +164,37 @@ func tcpServiceOnRead(data any, _ *iovec.IOData) error {
 		return nil
 	}
 	if _, err := s.ln.accept(openHandle); err != nil {
-		if ne, ok := err.(net.Error); ok && ne.Temporary() {
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Temporary() {
+			// Do not spin on temporary accept failure.
+			// Reference:
+			//   https://github.com/golang/go/commit/913abfee3bd25af5d80b3b9079d22f8e296d94c8
+			s.doTempDelay()
 			return nil
 		}
 		return fmt.Errorf("tcp service on read error during accepting: %w", err)
 	}
+	// Reset temporary delay so long as `accept` successfully returns.
+	s.tempDelay = 0
 	return nil
 }
 
-func tcpServiceOnHup(data any) {
+func (s *tcpservice) doTempDelay() {
+	if s.tempDelay == 0 {
+		s.tempDelay = initialTempDelay
+	} else {
+		s.tempDelay *= tempDelayMultiplier
+	}
+	if s.tempDelay > maxTempDelay {
+		s.tempDelay = maxTempDelay
+	}
+	// The poller the current listener is in only handles listener events,
+	// so sleep here may affect the `accept` events of other listeners (if there are more than one)
+	// but not the connection's own events (since they will not be in the same poller as the listener).
+	time.Sleep(s.tempDelay)
+}
+
+func tcpServiceOnHup(data interface{}) {
 	s, ok := data.(*tcpservice)
 	if !ok || s == nil {
 		panic(fmt.Sprintf("bug: data is not *tcpservice type (%v) or s is nil pointer (%v)", !ok, s == nil))

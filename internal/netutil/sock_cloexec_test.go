@@ -38,4 +38,7 @@ func TestAccept(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	_, _, err = netutil.Accept(fd)
 	assert.Nil(t, err)
+
+	_, _, err = netutil.Accept(10086)
+	assert.NotNil(t, err)
 }

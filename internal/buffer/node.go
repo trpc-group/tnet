@@ -20,7 +20,7 @@ import (
 )
 
 var nodePool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return &node{}
 	},
 }
@@ -76,7 +76,7 @@ func (n *node) cap() int {
 }
 
 func (n *node) isFull() bool {
-	return (int(n.w) == len(n.block))
+	return int(n.w) == len(n.block)
 }
 
 func (n *node) peek(num int) ([]byte, error) {

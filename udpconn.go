@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -36,7 +37,7 @@ import (
 var _ PacketConn = (*udpconn)(nil)
 
 type udpconn struct {
-	metaData    any
+	metaData    interface{}
 	reqHandle   atomic.Value
 	closeHandle atomic.Value
 	readTrigger chan struct{}
@@ -47,10 +48,11 @@ type udpconn struct {
 	nfd         netFD
 
 	closer
-	postpone    autopostpone.PostponeWrite
-	reading     locker.Locker
-	writing     locker.Locker
-	nonblocking bool
+	postpone     autopostpone.PostponeWrite
+	reading      locker.Locker
+	writing      locker.Locker
+	nonblocking  bool
+	closeService *sync.WaitGroup
 }
 
 func (uc *udpconn) schedule() error {
@@ -198,7 +200,7 @@ func (uc *udpconn) WriteTo(p []byte, addr net.Addr) (int, error) {
 		return uc.writeToBuffer(p, addr)
 	}
 	n, err := uc.writeToNetFD(p, addr)
-	if (n == 0 && err == nil) || err == unix.EAGAIN || err == unix.EWOULDBLOCK {
+	if (n == 0 && err == nil) || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
 		return uc.writeToBuffer(p, addr)
 	}
 	return n, err
@@ -232,8 +234,7 @@ func (uc *udpconn) writeToBuffer(p []byte, addr net.Addr) (int, error) {
 		return n, nil
 	}
 	if uc.outBuffer.LenRead() != 0 {
-		err := uc.nfd.Control(poller.ModReadWriteable)
-		return n, err
+		return n, uc.nfd.Control(poller.ModReadWriteable)
 	}
 	uc.writing.Unlock()
 	if uc.outBuffer.LenRead() != 0 && uc.writing.TryLock() {
@@ -261,6 +262,9 @@ func (uc *udpconn) Close() error {
 	}
 	if uc.wtimer != nil {
 		uc.wtimer.Stop()
+	}
+	if uc.closeService != nil {
+		uc.closeService.Done()
 	}
 	uc.nfd.close()
 	return nil
@@ -348,6 +352,14 @@ func (uc *udpconn) SetMaxPacketSize(size int) {
 	uc.nfd.udpBufferSize = size
 }
 
+// SetExactUDPBufferSizeEnabled set whether to allocate an exact-sized buffer for UDP packets, false in default.
+// If set to true, an exact-sized buffer is allocated for each UDP packet, requiring two system calls.
+// If set to false, a fixed buffer size of maxUDPPacketSize is used, 65536 in default, requiring only one system call.
+// This option should be used in conjunction with the ReadPacket method to properly read UDP packets.
+func (uc *udpconn) SetExactUDPBufferSizeEnabled(exactUDPBufferSizeEnabled bool) {
+	uc.nfd.exactUDPBufferSizeEnabled = exactUDPBufferSizeEnabled
+}
+
 // SetNonBlocking set conn to nonblocking. Read APIs will return EAGAIN when there is no
 // enough data for reading.
 func (uc *udpconn) SetNonBlocking(nonblock bool) {
@@ -416,8 +428,8 @@ func (uc *udpconn) getOnRequest() UDPHandler {
 	return reqHandle
 }
 
-func udpOnRead(data any, _ *iovec.IOData) error {
-	// data passed from desc to udpOnRead must be of type *udpconn.
+func udpOnRead(data interface{}, _ *iovec.IOData) error {
+	// Data passed from desc to udpOnRead must be of type *udpconn.
 	uc, ok := data.(*udpconn)
 	if !ok || uc == nil {
 		return fmt.Errorf("udpOnRead: invalid data %+v, type %T", uc, uc)
@@ -433,17 +445,17 @@ func udpOnRead(data any, _ *iovec.IOData) error {
 	if uc.nonblocking {
 		return udpSyncHandle(uc)
 	}
-	// wakeup one reading blocked goroutine.
+	// Wake up one reading blocked goroutine.
 	select {
 	case uc.readTrigger <- struct{}{}:
 	default:
 	}
-	// sync mode doesn't have onRequest handler.
+	// Sync mode doesn't have onRequest handler.
 	handler := uc.getOnRequest()
 	if handler == nil {
 		return nil
 	}
-	// make sure only one goroutine process data.
+	// Make sure only one goroutine will process data.
 	if !uc.reading.TryLock() {
 		uc.postpone.IncReadingTryLockFail()
 		return nil
@@ -451,8 +463,8 @@ func udpOnRead(data any, _ *iovec.IOData) error {
 	return doTask(uc)
 }
 
-func udpOnWrite(data any) error {
-	// data passed from desc to udpOnWrite must be of type *udpconn.
+func udpOnWrite(data interface{}) error {
+	// Data passed from desc to udpOnWrite must be of type *udpconn.
 	uc, ok := data.(*udpconn)
 	if !ok || uc == nil {
 		return fmt.Errorf("udpOnWrite: invalid data %+v, type %T", uc, uc)
@@ -476,8 +488,8 @@ func udpOnWrite(data any) error {
 	}
 	uc.writing.Unlock()
 
-	// race condition check, make sure the income data in short time between LenRead() and Unlock()
-	// can be handled by monitoring OnWrite event
+	// Race condition check, make sure the income data in short time between LenRead() and Unlock()
+	// can be handled by monitoring OnWrite event.
 	if uc.outBuffer.LenRead() != 0 && uc.writing.TryLock() {
 		return uc.nfd.Control(poller.ModReadWriteable)
 	}
@@ -544,8 +556,7 @@ func udpAsyncHandler(conn *udpconn) {
 		}
 		conn.reading.Unlock()
 		conn.postpone.ResetReadingTryLockFail()
-		// check again to prevent packet loss because
-		// conn may receive data before Unlock.
+		// Check again to prevent packet loss because conn may receive data before Unlock.
 		if conn.Len() <= 0 || !conn.reading.TryLock() {
 			return
 		}
@@ -570,11 +581,11 @@ func udpSyncHandle(conn *udpconn) error {
 }
 
 // SetMetaData sets meta data.
-func (uc *udpconn) SetMetaData(m any) {
+func (uc *udpconn) SetMetaData(m interface{}) {
 	uc.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (uc *udpconn) GetMetaData() any {
+func (uc *udpconn) GetMetaData() interface{} {
 	return uc.metaData
 }

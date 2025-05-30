@@ -56,18 +56,21 @@ var (
 var _ Conn = (*tcpconn)(nil)
 
 type tcpconn struct {
-	service     *tcpservice
-	metaData    any
-	reqHandle   atomic.Value
-	closeHandle atomic.Value
-	readTrigger chan struct{}
-	inBuffer    buffer.Buffer
-	outBuffer   buffer.Buffer
-	rtimer      *timer.Timer
-	wtimer      *timer.Timer
-	idleTimer   *asynctimer.Timer
-	writevData  iovec.IOData
-	nfd         netFD
+	service        *tcpservice
+	metaData       interface{}
+	reqHandle      atomic.Value
+	closeHandle    atomic.Value
+	readTrigger    chan struct{}
+	inBuffer       buffer.Buffer
+	outBuffer      buffer.Buffer
+	closedReadBuf  buffer.FixedReadBuffer
+	rtimer         *timer.Timer
+	wtimer         *timer.Timer
+	idleTimer      *asynctimer.Timer
+	writeIdleTimer *asynctimer.Timer
+	readIdleTimer  *asynctimer.Timer
+	writevData     iovec.IOData
+	nfd            netFD
 
 	closer
 	postpone    autopostpone.PostponeWrite
@@ -78,8 +81,8 @@ type tcpconn struct {
 	safeWrite   bool
 }
 
-// MassiveConnections denotes whether this is under heavy connections scenario.
-var MassiveConnections bool
+// MassiveConnections denotes whether this is under heavy connections' scenario.
+var MassiveConnections atomic.Bool
 
 func init() {
 	go checkAndSetBufferCleanUp()
@@ -89,12 +92,12 @@ func checkAndSetBufferCleanUp() {
 	ticker := time.NewTicker(defaultCleanUpCheckInterval)
 	for range ticker.C {
 		if metrics.Get(metrics.TCPConnsCreate)-
-			metrics.Get(metrics.TCPConnsClose) > uint64(DefaultCleanUpThrottle) {
+			metrics.Get(metrics.TCPConnsClose) >= uint64(DefaultCleanUpThrottle) {
 			buffer.SetCleanUp(true)
-			MassiveConnections = true
+			MassiveConnections.Store(true)
 		} else {
 			buffer.SetCleanUp(false)
-			MassiveConnections = false
+			MassiveConnections.Store(false)
 		}
 	}
 }
@@ -104,7 +107,9 @@ func (tc *tcpconn) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-
+	if !tc.IsActive() {
+		return tc.closedReadBuf.Read(b)
+	}
 	if !tc.beginJobSafely(apiRead) {
 		return 0, ErrConnClosed
 	}
@@ -118,6 +123,9 @@ func (tc *tcpconn) Read(b []byte) (int, error) {
 
 // ReadN reads fixed length of data from the tcpconn.
 func (tc *tcpconn) ReadN(n int) ([]byte, error) {
+	if !tc.IsActive() {
+		return tc.closedReadBuf.ReadN(n)
+	}
 	if !tc.beginJobSafely(apiRead) {
 		return nil, ErrConnClosed
 	}
@@ -136,6 +144,9 @@ func (tc *tcpconn) ReadN(n int) ([]byte, error) {
 
 // Next reads fixed length of data from the tcpconn.
 func (tc *tcpconn) Next(n int) ([]byte, error) {
+	if !tc.IsActive() {
+		return tc.closedReadBuf.Next(n)
+	}
 	if !tc.beginJobSafely(apiRead) {
 		return nil, ErrConnClosed
 	}
@@ -151,6 +162,9 @@ func (tc *tcpconn) Next(n int) ([]byte, error) {
 // read at least n bytes or error has occurred such as connection closed or read timeout.
 // The bytes stop being valid at the next ReadN or Release call.
 func (tc *tcpconn) Peek(n int) ([]byte, error) {
+	if !tc.IsActive() {
+		return tc.closedReadBuf.Peek(n)
+	}
 	if !tc.beginJobSafely(apiRead) {
 		return nil, ErrConnClosed
 	}
@@ -165,6 +179,9 @@ func (tc *tcpconn) Peek(n int) ([]byte, error) {
 // Skip skips the next n bytes and advances the reader. It waits until the underlayer has at
 // least n bytes or error has occurred such as connection closed or read timeout.
 func (tc *tcpconn) Skip(n int) error {
+	if !tc.IsActive() {
+		return tc.closedReadBuf.Skip(n)
+	}
 	if !tc.beginJobSafely(apiRead) {
 		return ErrConnClosed
 	}
@@ -272,6 +289,7 @@ func (tc *tcpconn) Writev(p ...[]byte) (int, error) {
 
 func (tc *tcpconn) writeToNetFD() error {
 	tc.refreshConn()
+	tc.refreshWriteIdleTimeout()
 	var (
 		n   int
 		err error
@@ -368,6 +386,10 @@ func (tc *tcpconn) Close() error {
 	close(tc.readTrigger)
 	// Stop all jobs safely.
 	tc.closeAllJobs()
+
+	// all job closed, restore read buffer to closedBuffer.
+	tc.storeReadBuffer()
+
 	// Execute user-defined closing process.
 	if closeHandle := tc.getOnClosed(); closeHandle != nil {
 		closeHandle(tc)
@@ -385,6 +407,12 @@ func (tc *tcpconn) Close() error {
 	}
 	if tc.idleTimer != nil {
 		asynctimer.Del(tc.idleTimer)
+	}
+	if tc.writeIdleTimer != nil {
+		asynctimer.Del(tc.writeIdleTimer)
+	}
+	if tc.readIdleTimer != nil {
+		asynctimer.Del(tc.readIdleTimer)
 	}
 	// Safe to free netFD.
 	tc.nfd.close()
@@ -497,20 +525,62 @@ func (tc *tcpconn) SetKeepAlive(t time.Duration) error {
 	return tc.nfd.SetKeepAlive(int(math.Ceil(t.Seconds())))
 }
 
-// SetIdleTimeout sets the idle timeout to close connection.
+// SetIdleTimeout sets the idle timeout for closing the connection.
+// If d is less than or equal to 0, the idle timeout is disabled.
 func (tc *tcpconn) SetIdleTimeout(d time.Duration) error {
 	if !tc.IsActive() {
 		return ErrConnClosed
 	}
-	if d <= 0 {
-		return nil
-	}
 	if tc.idleTimer != nil {
 		asynctimer.Del(tc.idleTimer)
 	}
+	if d <= 0 {
+		return nil
+	}
 	tc.idleTimer = asynctimer.NewTimer(tc, tcpOnIdle, d)
+
 	if err := asynctimer.Add(tc.idleTimer); err != nil {
 		return fmt.Errorf("tcp connection set idle timeout asynctimer add error: %w", err)
+	}
+	return nil
+}
+
+// SetWriteIdleTimeout sets the write idle timeout for closing the connection.
+// If d is less than or equal to 0, the idle timeout is disabled.
+func (tc *tcpconn) SetWriteIdleTimeout(d time.Duration) error {
+	if !tc.IsActive() {
+		return ErrConnClosed
+	}
+	if tc.writeIdleTimer != nil {
+		asynctimer.Del(tc.writeIdleTimer)
+	}
+	if d <= 0 {
+		return nil
+	}
+	tc.writeIdleTimer = asynctimer.NewTimer(tc, tcpOnIdle, d)
+
+	if err := asynctimer.Add(tc.writeIdleTimer); err != nil {
+		return fmt.Errorf("tcp connection set write idle timeout asynctimer add error: %w", err)
+	}
+	return nil
+}
+
+// SetReadIdleTimeout sets the read idle timeout for closing the connection.
+// If d is less than or equal to 0, the idle timeout is disabled.
+func (tc *tcpconn) SetReadIdleTimeout(d time.Duration) error {
+	if !tc.IsActive() {
+		return ErrConnClosed
+	}
+	if tc.readIdleTimer != nil {
+		asynctimer.Del(tc.readIdleTimer)
+	}
+	if d <= 0 {
+		return nil
+	}
+	tc.readIdleTimer = asynctimer.NewTimer(tc, tcpOnIdle, d)
+
+	if err := asynctimer.Add(tc.readIdleTimer); err != nil {
+		return fmt.Errorf("tcp connection set read idle timeout asynctimer add error: %w", err)
 	}
 	return nil
 }
@@ -535,7 +605,7 @@ func (tc *tcpconn) SetFlushWrite(flushWrite bool) {}
 //	  be handled by tnet, which means users cannot reuse the buffers after passing
 //	  them into Write/Writev.
 //	If safeWrite = true: the given buffers is copied into tnet's own buffer.
-//	  Therefore users can reuse the buffers passed into Write/Writev.
+//	  Therefore, users can reuse the buffers passed into Write/Writev.
 func (tc *tcpconn) SetSafeWrite(safeWrite bool) {
 	tc.safeWrite = safeWrite
 }
@@ -564,6 +634,24 @@ func (tc *tcpconn) getOnClosed() OnTCPClosed {
 	return closeHandle
 }
 
+func (tc *tcpconn) refreshWriteIdleTimeout() error {
+	if tc.writeIdleTimer != nil {
+		if err := asynctimer.Add(tc.writeIdleTimer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (tc *tcpconn) refreshReadIdleTimeout() error {
+	if tc.readIdleTimer != nil {
+		if err := asynctimer.Add(tc.readIdleTimer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (tc *tcpconn) refreshConn() error {
 	if tc.idleTimer != nil {
 		if err := asynctimer.Add(tc.idleTimer); err != nil {
@@ -573,7 +661,7 @@ func (tc *tcpconn) refreshConn() error {
 	return nil
 }
 
-func tcpOnIdle(data any) {
+func tcpOnIdle(data interface{}) {
 	c, ok := data.(Conn)
 	if !ok {
 		return
@@ -581,8 +669,8 @@ func tcpOnIdle(data any) {
 	c.Close()
 }
 
-func tcpOnRead(data any, ioData *iovec.IOData) error {
-	// data passed from desc to tcpOnRead must be of type *tcpconn.
+func tcpOnRead(data interface{}, ioData *iovec.IOData) error {
+	// Data passed from desc to tcpOnRead must be of type *tcpconn.
 	tc, ok := data.(*tcpconn)
 	if !ok || tc == nil {
 		return fmt.Errorf("tcpOnRead: invalid data %+v, type %T", tc, tc)
@@ -591,10 +679,11 @@ func tcpOnRead(data any, ioData *iovec.IOData) error {
 		return nil
 	}
 	defer tc.endJobSafely(sysRead)
-
+	tc.refreshReadIdleTimeout()
 	tc.refreshConn()
+
 	if err := tc.inBuffer.Fill(&tc.nfd, int(tc.waitReadLen.Load()), ioData); err != nil {
-		if err == buffer.ErrBufferFull {
+		if errors.Is(err, buffer.ErrBufferFull) {
 			return nil
 		}
 		return err
@@ -603,17 +692,17 @@ func tcpOnRead(data any, ioData *iovec.IOData) error {
 	if tc.nonblocking {
 		return tcpSyncHandle(tc)
 	}
-	// wakeup one reading blocked goroutine
+	// Wake up one reading blocked goroutine.
 	select {
 	case tc.readTrigger <- struct{}{}:
 	default:
 	}
-	// sync mode doesn't have onRequest handler
+	// Sync mode doesn't have onRequest handler.
 	handler := tc.getOnRequest()
 	if handler == nil {
 		return nil
 	}
-	// make sure only one goroutine will process data
+	// Make sure only one goroutine will process data.
 	if !tc.reading.TryLock() {
 		tc.postpone.IncReadingTryLockFail()
 		return nil
@@ -621,8 +710,8 @@ func tcpOnRead(data any, ioData *iovec.IOData) error {
 	return doTask(tc)
 }
 
-func tcpOnWrite(data any) error {
-	// data passed from desc to tcpOnWrite must be of type *tcpconn.
+func tcpOnWrite(data interface{}) error {
+	// Data passed from desc to tcpOnWrite must be of type *tcpconn.
 	tc, ok := data.(*tcpconn)
 	if !ok || tc == nil {
 		return fmt.Errorf("tcpOnWrite: invalid data %+v, type %T", tc, tc)
@@ -639,7 +728,7 @@ func tcpOnWrite(data any) error {
 		}
 		return err
 	}
-	// waiting for next OnWrite Event to write the left data
+	// Waiting for next OnWrite Event to write the left data.
 	if tc.outBuffer.LenRead() != 0 {
 		return nil
 	}
@@ -649,7 +738,7 @@ func tcpOnWrite(data any) error {
 	}
 	tc.writing.Unlock()
 
-	// race condition check, make sure the incoming data in short time between LenRead() and Unlock()
+	// Race condition check, make sure the incoming data in short time between LenRead() and Unlock()
 	// can be handled by monitoring OnWrite event.
 	if tc.outBuffer.LenRead() != 0 && tc.writing.TryLock() {
 		metrics.Add(metrics.TCPWriteNotify, 1)
@@ -658,7 +747,7 @@ func tcpOnWrite(data any) error {
 	return nil
 }
 
-func tcpOnHup(data any) {
+func tcpOnHup(data interface{}) {
 	tc, ok := data.(*tcpconn)
 	if ok && tc != nil {
 		tc.Close()
@@ -681,8 +770,7 @@ func tcpAsyncHandler(conn *tcpconn) {
 		}
 		conn.reading.Unlock()
 		conn.postpone.ResetReadingTryLockFail()
-		// check again to prevent packet loss because
-		// conn may receive data before Unlock.
+		// Check again to prevent packet loss because conn may receive data before Unlock.
 		if conn.Len() <= 0 || !conn.reading.TryLock() {
 			return
 		}
@@ -701,7 +789,7 @@ func tcpSyncHandle(conn *tcpconn) error {
 		if err == nil {
 			continue
 		}
-		if err == EAGAIN {
+		if errors.Is(err, EAGAIN) {
 			return nil
 		}
 		return err
@@ -711,11 +799,31 @@ func tcpSyncHandle(conn *tcpconn) error {
 }
 
 // SetMetaData sets meta data.
-func (tc *tcpconn) SetMetaData(m any) {
+func (tc *tcpconn) SetMetaData(m interface{}) {
 	tc.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (tc *tcpconn) GetMetaData() any {
+func (tc *tcpconn) GetMetaData() interface{} {
 	return tc.metaData
+}
+
+// storeReadBuffer stores the remaining read buffer to closedReadBuf when connection is closed.
+func (tc *tcpconn) storeReadBuffer() error {
+	rlen := tc.inBuffer.LenRead()
+	// readBuffer is empty, no need to store
+	if rlen == 0 {
+		return nil
+	}
+
+	buf := make([]byte, rlen)
+	n, err := tc.inBuffer.Read(buf)
+	if err != nil {
+		err = fmt.Errorf("tcpconn storeReadBuffer error for rlen: %d, read: %d, err: %w", rlen, n, err)
+		log.Infof(err.Error())
+		return err
+	}
+
+	tc.closedReadBuf.Initialize(buf[:n])
+	return nil
 }

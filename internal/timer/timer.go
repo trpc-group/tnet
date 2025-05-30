@@ -14,7 +14,9 @@
 // Package timer provides functions of timer.
 package timer
 
-import "time"
+import (
+	"time"
+)
 
 // Timer type represents a single event.
 type Timer struct {
@@ -34,15 +36,16 @@ func New(t time.Time) *Timer {
 func (t *Timer) Start() {
 	if t.timer == nil {
 		t.timer = time.NewTimer(time.Until(t.deadline))
-	} else {
-		if !t.timer.Stop() {
-			select {
-			case <-t.timer.C:
-			default:
-			}
-		}
-		t.timer.Reset(time.Until(t.deadline))
+		return
 	}
+
+	if !t.timer.Stop() {
+		select {
+		case <-t.timer.C:
+		default:
+		}
+	}
+	t.timer.Reset(time.Until(t.deadline))
 }
 
 // Stop ends the timer and resets it to no timeout state.
@@ -72,10 +75,7 @@ func (t *Timer) Reset(u time.Time) {
 
 // Expired returns whether the timer has expired.
 func (t *Timer) Expired() bool {
-	if !t.deadline.IsZero() && t.deadline.Before(time.Now()) {
-		return true
-	}
-	return false
+	return !t.deadline.IsZero() && t.deadline.Before(time.Now())
 }
 
 // IsZero returns whether the timer is in no timeout state.

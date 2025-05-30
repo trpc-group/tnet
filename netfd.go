@@ -54,8 +54,9 @@ type netFD struct {
 
 	// The intention of locker is to ensure close() concurrent safe.
 	// netFD can only be closed once, and no control() can be called thereafter.
-	locker        sync.Mutex
-	udpBufferSize int
+	locker                    sync.Mutex
+	udpBufferSize             int
+	exactUDPBufferSizeEnabled bool
 }
 
 var listenerPollMgr *poller.PollMgr
@@ -121,18 +122,20 @@ func (nfd *netFD) close() {
 
 // Schedule add NetFD to poller system, and monitor Readable Event.
 func (nfd *netFD) Schedule(
-	onRead func(data any, ioData *iovec.IOData) error,
-	onWrite func(data any) error,
-	onHup func(data any),
-	conn any,
+	onRead func(data interface{}, ioData *iovec.IOData) error,
+	onWrite func(data interface{}) error,
+	onHup func(data interface{}),
+	conn interface{},
 ) error {
 	if nfd.desc != nil {
 		return errors.New("already in poller system")
 	}
 	desc := poller.NewDesc()
+	desc.Lock()
 	desc.FD = nfd.FD()
 	desc.Data = conn
 	desc.OnRead, desc.OnWrite, desc.OnHup = onRead, onWrite, onHup
+	desc.Unlock()
 	var err error
 	if nfd.fdtype == fdListen {
 		err = desc.PickPollerWithPollMgr(listenerPollMgr)
@@ -193,7 +196,8 @@ func (nfd *netFD) Writev(ivs []unix.Iovec) (int, error) {
 }
 
 const (
-	defaultUDPBufferSize = 65535
+	defaultUDPBufferSize             = 65535
+	defaultExactUDPBufferSizeEnabled = false
 )
 
 var (
@@ -211,7 +215,7 @@ func (nfd *netFD) WriteTo(data []byte, addr net.Addr) (int, error) {
 	if len(data) > nfd.udpBufferSize {
 		return 0, fmt.Errorf("data length %d is too long, the max udp buffer size is %d", len(data), nfd.udpBufferSize)
 	}
-	sa, err := netutil.AddrToSockAddr(addr)
+	sa, err := netutil.AddrToSockAddr(nfd.laddr, addr)
 	if err != nil {
 		return 0, err
 	}

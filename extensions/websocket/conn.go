@@ -16,7 +16,6 @@ package websocket
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"sync"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/pkg/errors"
 	"trpc.group/trpc-go/tnet"
+	"trpc.group/trpc-go/tnet/log"
 	"trpc.group/trpc-go/tnet/tls"
 )
 
@@ -38,13 +38,15 @@ type conn struct {
 	// Note: This lock does not guarantee concurrent safety when reading message.
 	mu          sync.Mutex
 	raw         rawConnection
-	metaData    any
+	metaData    interface{}
 	role        ws.State    // ws.StateServerSide or ws.StateClientSide.
 	reader      io.Reader   // connection-wise message type reader for Read.
 	messageType MessageType // connection-wise message type for Read/Write.
 	subprotocol string      // the subprotocol selected during handshake.
 	pingHandler func(c Conn, data []byte) error
 	pongHandler func(c Conn, data []byte) error
+
+	combineWrites bool // Controls if header and payload writes are combined into a single syscall.
 }
 
 // rawConnection provides an interface that raw connection inside *websocket.conn
@@ -55,10 +57,14 @@ type rawConnection interface {
 	Writev(p ...[]byte) (int, error)
 	// SetIdleTimeout sets the idle timeout to close connection.
 	SetIdleTimeout(d time.Duration) error
+	// SetWriteIdleTimeout sets the write idle timeout for closing the connection.
+	SetWriteIdleTimeout(d time.Duration) error
+	// SetReadIdleTimeout sets the read idle timeout for closing the connection.
+	SetReadIdleTimeout(d time.Duration) error
 	// SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
-	SetMetaData(any)
+	SetMetaData(interface{})
 	// GetMetaData gets meta data.
-	GetMetaData() any
+	GetMetaData() interface{}
 }
 
 // rawConn wraps tls.Conn to provide a pseudo Writev implementation.
@@ -98,12 +104,12 @@ func (c *conn) Read(buf []byte) (int, error) {
 				tp  MessageType
 			)
 			tp, c.reader, err = c.NextMessageReader()
+			if err != nil {
+				return 0, err
+			}
 			if tp != c.messageType {
 				io.Copy(io.Discard, c.reader) // Discard the mismatch message.
 				return 0, fmt.Errorf("inconsistent message type from Read: %s, want %s", tp, c.messageType)
-			}
-			if err != nil {
-				return 0, err
 			}
 		}
 		n, err := c.reader.Read(buf)
@@ -118,6 +124,28 @@ func (c *conn) Read(buf []byte) (int, error) {
 	}
 }
 
+// ReadAnyMessage reads a data message of any kinds.
+//
+// This API is now in favor of the ReadMessage method, which may lead to
+// blocking goroutines in the scenario of interleaved control and data frames.
+//
+// Note: The control frame returned by this method will not be automatically
+// handled by the default or customized control frame handlers.
+//
+// Not Concurrent safe.
+// Do not use this API in multiple goroutines.
+func (c *conn) ReadAnyMessage() (MessageType, []byte, error) {
+	controlHandler := c.newControlFrameHandler()
+	rd := c.newReader(controlHandler)
+	hdr, err := rd.NextFrame()
+	if err != nil {
+		return -1, nil, err
+	}
+	tp := toMessageType[hdr.OpCode]
+	bts, err := io.ReadAll(rd)
+	return tp, bts, err
+}
+
 // ReadMessage reads a complete text or binary data message.
 // The returned DataType specifies that it is text or binary.
 // The returned type can only be text or binary, because control
@@ -130,7 +158,7 @@ func (c *conn) ReadMessage() (MessageType, []byte, error) {
 	if err != nil {
 		return tp, nil, err
 	}
-	bts, err := ioutil.ReadAll(rd)
+	bts, err := io.ReadAll(rd)
 	return tp, bts, err
 }
 
@@ -146,9 +174,9 @@ func (c *conn) ReadMessage() (MessageType, []byte, error) {
 //		reader io.Reader
 //	}
 //
-//	Read implements io.Reader, treats websocket protocol as a plain
-//	binary data stream protocol. The returned data type must be of type binary.
-//	Payloads from multiple messages can be read to fill the given buffer p.
+//	// Read implements io.Reader, treats websocket protocol as a plain
+//	// binary data stream protocol. The returned data type must be of type binary.
+//	// Payloads from multiple messages can be read to fill the given buffer p.
 //	func (c *customizedConn) Read(p []byte) (int, error) {
 //		var (
 //			tp  websocket.MessageType
@@ -210,11 +238,17 @@ func (c *conn) NextMessageReader() (MessageType, io.Reader, error) {
 // Concurrent safe.
 // You can use this API in multiple goroutines.
 func (c *conn) Write(buf []byte) (int, error) {
+	if c.messageType != Text && c.messageType != Binary {
+		return 0, errors.New("message type is neither Text nor Binary for this connection")
+	}
+	if c.combineWrites {
+		if err := c.writeMessageCombined(c.messageType, buf); err != nil {
+			return 0, err
+		}
+		return len(buf), nil
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.messageType != Text && c.messageType != Binary {
-		return 0, errors.New("message type is neither Text nor Binary for this connection, cannot use Write")
-	}
 	if err := c.writeMessage(c.messageType, buf); err != nil {
 		return 0, err
 	}
@@ -226,6 +260,9 @@ func (c *conn) Write(buf []byte) (int, error) {
 // Concurrent safe.
 // You can use this API in multiple goroutines.
 func (c *conn) WriteMessage(tp MessageType, buf []byte) error {
+	if c.combineWrites {
+		return c.writeMessageCombined(tp, buf)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.writeMessage(tp, buf)
@@ -233,16 +270,27 @@ func (c *conn) WriteMessage(tp MessageType, buf []byte) error {
 
 // WritevMessage writes multiple messages in a single frame.
 // Note that client side needs to mask the data to form payload,
-// therefore writev does not actually works with client side writing.
+// therefore writev does not actually work with client side writing.
 //
 // Concurrent safe.
 // You can use this API in multiple goroutines.
 func (c *conn) WritevMessage(tp MessageType, p ...[]byte) error {
+	if c.role.ClientSide() {
+		// Client side does not use writev, because masking needs to be done for client side.
+		var payload []byte
+		for i := range p {
+			payload = append(payload, p[i]...)
+		}
+		if c.combineWrites {
+			return c.writeMessageCombined(tp, payload)
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.writeMessage(tp, payload)
+	}
+	// Server side can use writev directly
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.role.ClientSide() {
-		return c.clientWritev(tp, p...)
-	}
 	return c.serverWritev(tp, p...)
 }
 
@@ -263,18 +311,51 @@ func (c *conn) serverWritev(tp MessageType, p ...[]byte) error {
 	return err
 }
 
-// clientWritev does not use writev, because masking needs to be done
-// for client side.
-func (c *conn) clientWritev(tp MessageType, p ...[]byte) error {
-	var payload []byte
-	for i := range p {
-		payload = append(payload, p[i]...)
-	}
-	return c.writeMessage(tp, payload)
-}
-
 func (c *conn) writeMessage(tp MessageType, buf []byte) error {
 	return wsutil.WriteMessage(c.raw, c.role, toOpCode[tp], buf)
+}
+
+// writeCombined writes message using combined writes optimization.
+func (c *conn) writeMessageCombined(tp MessageType, buf []byte) error {
+	bw := &bufWriter{
+		buf: make([]byte, 0, len(buf)+14), // Pre-allocate space for header (max 14 bytes) and payload.
+		w:   c.raw,
+	}
+	if err := wsutil.WriteMessage(bw, c.role, toOpCode[tp], buf); err != nil {
+		return err
+	}
+	return bw.Flush()
+}
+
+// buffer writer
+type bufWriter struct {
+	buf []byte
+	w   io.Writer
+}
+
+// Write implements io.Writer interface.
+func (bw *bufWriter) Write(p []byte) (n int, err error) {
+	bw.buf = append(bw.buf, p...)
+	return len(p), nil
+}
+
+// Flush writes all buffered data to underlying writer.
+func (bw *bufWriter) Flush() error {
+	if bw.w == nil {
+		return errors.New("writer is nil")
+	}
+	if len(bw.buf) == 0 {
+		return nil
+	}
+	n, err := bw.w.Write(bw.buf)
+	if err != nil {
+		return err
+	}
+	if n < len(bw.buf) {
+		return io.ErrShortWrite
+	}
+	bw.buf = bw.buf[:0]
+	return nil
 }
 
 // NextMessageWriter return a writer to write the next message.
@@ -296,12 +377,12 @@ func (w *writeCloser) Close() error {
 }
 
 // SetMetaData sets meta data.
-func (c *conn) SetMetaData(m any) {
+func (c *conn) SetMetaData(m interface{}) {
 	c.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (c *conn) GetMetaData() any {
+func (c *conn) GetMetaData() interface{} {
 	return c.metaData
 }
 
@@ -328,6 +409,30 @@ func (c *conn) SetPongHandler(handler func(Conn, []byte) error) {
 	c.pongHandler = handler
 }
 
+// SetAsyncPingHandler sets customized asynchronous Ping frame handler.
+func (c *conn) SetAsyncPingHandler(handler func(Conn, []byte) error) {
+	c.pingHandler = func(c Conn, data []byte) error {
+		tnet.Submit(func() {
+			if err := handler(c, data); err != nil {
+				log.Errorf("ping handler handle error: %+v", err)
+			}
+		})
+		return nil
+	}
+}
+
+// SetAsyncPongHandler sets customized asynchronous Pong frame handler.
+func (c *conn) SetAsyncPongHandler(handler func(Conn, []byte) error) {
+	c.pongHandler = func(c Conn, data []byte) error {
+		tnet.Submit(func() {
+			if err := handler(c, data); err != nil {
+				log.Errorf("pong handler handle error: %+v", err)
+			}
+		})
+		return nil
+	}
+}
+
 func (c *conn) newReader(handler wsutil.FrameHandlerFunc) *wsutil.Reader {
 	return &wsutil.Reader{
 		Source:         c.raw,
@@ -346,6 +451,18 @@ func (c *conn) newControlFrameHandler() wsutil.FrameHandlerFunc {
 // SetIdleTimeout sets connection level idle timeout.
 func (c *conn) SetIdleTimeout(d time.Duration) error {
 	return c.raw.SetIdleTimeout(d)
+}
+
+// SetWriteIdleTimeout sets the write idle timeout for closing the connection.
+// If d is less than or equal to 0, the idle timeout is disabled.
+func (c *conn) SetWriteIdleTimeout(d time.Duration) error {
+	return c.raw.SetWriteIdleTimeout(d)
+}
+
+// SetReadIdleTimeout sets the read idle timeout for closing the connection.
+// If d is less than or equal to 0, the idle timeout is disabled.
+func (c *conn) SetReadIdleTimeout(d time.Duration) error {
+	return c.raw.SetReadIdleTimeout(d)
 }
 
 // LocalAddr returns the local network address, if known.

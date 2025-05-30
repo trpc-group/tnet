@@ -11,15 +11,15 @@
 //
 //
 
-// Package buffer provides linked buffers.
+// Package buffer provides linked buffers and fixed buffer.
 package buffer
 
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 	"golang.org/x/sys/unix"
 	"trpc.group/trpc-go/tnet/internal/cache/systype"
 	"trpc.group/trpc-go/tnet/internal/iovec"
@@ -42,7 +42,7 @@ var (
 	// MaxBufferSize max buffer size to fill
 	MaxBufferSize = defaultMaxBufferSize
 	// cleanUp indicates whether to enable clean up feature for all buffers.
-	cleanUp = false
+	cleanUp atomic.Bool
 )
 
 var (
@@ -57,7 +57,7 @@ var (
 )
 
 var bufferPool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return &Buffer{}
 	},
 }
@@ -75,8 +75,8 @@ type Buffer struct {
 	// wlock can make sure only one writer to modify wlen.
 	wlock sync.Mutex
 
-	rlen uint32
-	wlen uint32
+	rlen atomic.Uint32
+	wlen atomic.Uint32
 
 	// nodeBlockSize denotes the size of the block when adding
 	// a new node to the buffer.
@@ -130,7 +130,7 @@ func Free(b *Buffer) {
 // state when there is no more data in the buffer.
 // It's used for 100w connections scenario to save memory.
 func SetCleanUp(b bool) {
-	cleanUp = b
+	cleanUp.Store(b)
 }
 
 // Peek returns the next n bytes without advancing the buffer.
@@ -145,7 +145,7 @@ func (b *Buffer) Peek(n int) ([]byte, error) {
 	if b.LenRead() < n {
 		return nil, ErrNoEnoughData
 	}
-	// find first non zero rnode
+	// Find the first nonzero rnode.
 	for b.rnode.len() == 0 {
 		b.rnode = b.rnode.next
 	}
@@ -153,7 +153,7 @@ func (b *Buffer) Peek(n int) ([]byte, error) {
 	if rnode.len() >= n {
 		return rnode.peek(n)
 	}
-	// not consistent space, allocate a new space and copy data together
+	// Not consistent space, allocate a new space and copy data together.
 	res := make([]byte, n)
 	var ack int
 	for ack < n && rnode != nil {
@@ -193,7 +193,7 @@ func (b *Buffer) Skip(n int) error {
 		if err := b.rnode.skip(n); err != nil {
 			return err
 		}
-		atomic.AddUint32(&b.rlen, ^uint32(n-1))
+		b.rlen.Sub(uint32(n))
 		return nil
 	}
 
@@ -214,7 +214,7 @@ func (b *Buffer) Skip(n int) error {
 		ack += offset
 	}
 	b.rnode = rnode
-	atomic.AddUint32(&b.rlen, ^uint32(ack-1))
+	b.rlen.Sub(uint32(ack))
 	return nil
 }
 
@@ -230,19 +230,20 @@ func (b *Buffer) Next(n int) ([]byte, error) {
 	if b.LenRead() < n {
 		return nil, ErrNoEnoughData
 	}
-	// find first non zero rnode
+	// Find the first nonzero rnode.
 	for b.rnode.len() == 0 {
 		b.rnode = b.rnode.next
 	}
 	rnode := b.rnode
 	if rnode.len() >= n {
 		s, err := rnode.readn(n)
-		if err == nil {
-			atomic.AddUint32(&b.rlen, ^uint32(n-1))
+		if err != nil {
+			return nil, err
 		}
-		return s, err
+		b.rlen.Sub(uint32(n))
+		return s, nil
 	}
-	// not consistent space, allocate a new space and copy data together
+	// Not consistent space, allocate a new space and copy data together.
 	res := make([]byte, n)
 	var ack int
 	for ack < n && rnode != nil {
@@ -263,7 +264,7 @@ func (b *Buffer) Next(n int) ([]byte, error) {
 	}
 	b.rnode = rnode
 	res = res[:ack]
-	atomic.AddUint32(&b.rlen, ^uint32(ack-1))
+	b.rlen.Sub(uint32(ack))
 	return res, nil
 }
 
@@ -286,7 +287,7 @@ func (b *Buffer) Read(p []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		atomic.AddUint32(&b.rlen, ^uint32(n-1))
+		b.rlen.Sub(uint32(n))
 		copy(p, s)
 		return n, nil
 	}
@@ -309,7 +310,7 @@ func (b *Buffer) Read(p []byte) (int, error) {
 		ack += offset
 	}
 	b.rnode = rnode
-	atomic.AddUint32(&b.rlen, ^uint32(ack-1))
+	b.rlen.Sub(uint32(ack))
 	return n, nil
 }
 
@@ -352,10 +353,11 @@ func (b *Buffer) ReadBlock() ([]byte, error) {
 	}
 	l := b.rnode.len()
 	s, err := b.rnode.readn(l)
-	if err == nil {
-		atomic.AddUint32(&b.rlen, ^uint32(l-1))
+	if err != nil {
+		return nil, err
 	}
-	return s, err
+	b.rlen.Sub(uint32(l))
+	return s, nil
 }
 
 // SkipBlocks skips n blocks(except 0 len block) from buffer and advances the buffer.
@@ -386,7 +388,7 @@ func (b *Buffer) SkipBlocks(n int) error {
 		return ErrNoEnoughData
 	}
 	b.rnode = rnode
-	atomic.AddUint32(&b.rlen, ^uint32(ack-1))
+	b.rlen.Sub(uint32(ack))
 	return nil
 }
 
@@ -398,15 +400,18 @@ func (b *Buffer) OptimizeMemory() {
 	if b.LenRead() != 0 {
 		return
 	}
-	if cleanUp {
+	if cleanUp.Load() {
 		b.CleanUpWithLock()
 		return
 	}
-	atomic.AddUint32(&b.wlen, uint32(b.wnode.w))
+	b.wlen.Add(uint32(b.wnode.w))
 	// If b.LenRead() == 0, rnode and wnode must be pointing to the same node.
 	// Reset write node read/write pointer(aka. offset)
 	// to avoid massive node get(put) operation from(to) the pool.
 	b.wnode.r, b.wnode.w = 0, 0
+	if !b.wnode.recycle {
+		b.wnode.block = nil
+	}
 }
 
 // CleanUpWithLock do the actual clean up logic with rwlock on.
@@ -418,7 +423,7 @@ func (b *Buffer) CleanUpWithLock() {
 	}
 	dumpNode := newDumpNode()
 	b.head, b.rnode, b.wnode, b.tail = dumpNode, dumpNode, dumpNode, dumpNode
-	atomic.StoreUint32(&b.wlen, 0)
+	b.wlen.Store(0)
 	// Reset node block size.
 	b.nodeBlockSize = uint32(blockSize)
 }
@@ -525,8 +530,8 @@ func (b *Buffer) linkWithExistingNodes(bs ...[]byte) (linked int, length int) {
 		b.wnode = pNode
 		linked++
 	}
-	atomic.AddUint32(&b.rlen, uint32(length))
-	atomic.AddUint32(&b.wlen, ^uint32(wlen-1))
+	b.rlen.Add(uint32(length))
+	b.wlen.Sub(uint32(wlen))
 	return
 }
 
@@ -559,21 +564,21 @@ func (b *Buffer) Fill(r Reader, n int, ioData *iovec.IOData) error {
 	}
 	b.wlock.Lock()
 	defer b.wlock.Unlock()
-	// make sure the buffer has free space
+	// Make sure the buffer has free space.
 	b.prepareFill()
-	// calculate how many blocks need be allocated to fill n byte data
+	// Calculate how many blocks need be allocated to fill n byte data.
 	nodeNum := b.calNodes(n)
-	// allocate blocks to buffer, and convert it to IOVS data struct
+	// Allocate blocks to buffer, and convert it to IOVS data struct.
 	b.malloc(nodeNum)
 	sliceCnt := b.countNodeAndFillByteVec(ioData)
 	ioData.SetIOVec(sliceCnt)
 	defer ioData.Release(sliceCnt)
-	// read data from reader, and fill to IOVS(blocks)
+	// Read data from reader, and fill to IOVS(blocks).
 	actual, err := r.Readv(ioData.IOVec[:sliceCnt])
 	if err != nil {
 		return err
 	}
-	// adjust the wnode according to the actual received data.
+	// Adjust the wnode according to the actual received data.
 	b.adjust(actual)
 	return nil
 }
@@ -638,8 +643,8 @@ func (b *Buffer) adjust(n int) {
 		pNode = pNode.next
 	}
 	b.wnode = pNode
-	atomic.AddUint32(&b.wlen, ^uint32(n-1))
-	atomic.AddUint32(&b.rlen, uint32(n))
+	b.wlen.Sub(uint32(n))
+	b.rlen.Add(uint32(n))
 }
 
 // Release releases the blocks that is already read.
@@ -668,13 +673,13 @@ func (b *Buffer) Release() {
 
 // LenRead returns how many data can be read in buffer.
 func (b *Buffer) LenRead() int {
-	l := atomic.LoadUint32(&b.rlen)
+	l := b.rlen.Load()
 	return int(l)
 }
 
 // LenWrite returns how many data can be written to buffer.
 func (b *Buffer) LenWrite() int {
-	l := atomic.LoadUint32(&b.wlen)
+	l := b.wlen.Load()
 	return int(l)
 }
 
@@ -685,7 +690,7 @@ func (b *Buffer) addChain(c *chain) {
 	b.wnode.next = c.head
 	b.wnode = c.tail
 	b.tail = c.tail
-	atomic.AddUint32(&b.rlen, uint32(c.dataLen))
+	b.rlen.Add(uint32(c.dataLen))
 }
 
 func (b *Buffer) addNode() {
@@ -693,13 +698,14 @@ func (b *Buffer) addNode() {
 	b.tail.next = n
 	b.tail = n
 	wlen := n.rest()
-	atomic.AddUint32(&b.wlen, uint32(wlen))
+	b.wlen.Add(uint32(wlen))
 	rlen := n.len()
-	atomic.AddUint32(&b.rlen, uint32(rlen))
+	b.rlen.Add(uint32(rlen))
 }
 
 func (b *Buffer) reset() {
-	b.rlen, b.wlen = 0, 0
+	b.rlen.Store(0)
+	b.wlen.Store(0)
 	b.head, b.tail, b.rnode, b.wnode = nil, nil, nil, nil
 }
 

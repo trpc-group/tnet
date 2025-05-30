@@ -58,6 +58,12 @@ func TestBuildMMsg(t *testing.T) {
 	assert.NotNil(t, m.Hdr.Iov)
 }
 
+func TestBuildMsg(t *testing.T) {
+	m := systype.Msghdr{}
+	systype.BuildMsg(&m, []byte("name"), []byte("buffer"))
+	assert.NotNil(t, m.Iov)
+}
+
 func BenchmarkNormal20(b *testing.B) {
 	var s [][]byte
 	b.ReportAllocs()
@@ -115,4 +121,10 @@ func TestGetMMsghdrs(t *testing.T) {
 	bigms := systype.GetMMsghdrs(systype.MaxLen + 1)
 	defer systype.PutMMsghdrs(bigms)
 	assert.Equal(t, systype.MaxLen+1, len(bigms))
+}
+
+func TestGetMsghdr(t *testing.T) {
+	msg := systype.GetMsghdr()
+	defer systype.PutMsghdr(msg)
+	assert.NotNil(t, msg)
 }

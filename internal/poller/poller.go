@@ -63,7 +63,7 @@ const (
 // Poller monitors file descriptor, calls Desc callbacks according to specific events.
 type Poller interface {
 	// Wait will poll all the registered Desc, and trigger the event callback
-	// specified by the Desc
+	// specified by the Desc.
 	Wait() error
 
 	// Close closes the poller and stops Wait().
