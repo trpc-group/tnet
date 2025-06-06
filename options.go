@@ -64,25 +64,43 @@ type Option struct {
 }
 
 type options struct {
-	onTCPOpened      OnTCPOpened
-	onTCPClosed      OnTCPClosed
-	onUDPClosed      OnUDPClosed
-	tcpKeepAlive     time.Duration
-	tcpIdleTimeout   time.Duration
-	nonblocking      bool
-	safeWrite        bool
-	maxUDPPacketSize int
+	onTCPOpened               OnTCPOpened
+	onTCPClosed               OnTCPClosed
+	onUDPClosed               OnUDPClosed
+	tcpKeepAlive              time.Duration
+	tcpIdleTimeout            time.Duration
+	tcpWriteIdleTimeout       time.Duration
+	tcpReadIdleTimeout        time.Duration
+	nonblocking               bool
+	safeWrite                 bool
+	maxUDPPacketSize          int
+	exactUDPBufferSizeEnabled bool
 }
 
 func (o *options) setDefault() {
 	o.tcpKeepAlive = defaultTCPKeepAlive
 	o.maxUDPPacketSize = defaultUDPBufferSize
+	o.exactUDPBufferSizeEnabled = defaultExactUDPBufferSizeEnabled
 }
 
 // WithTCPKeepAlive sets the tcp keep alive interval.
 func WithTCPKeepAlive(keepAlive time.Duration) Option {
 	return Option{func(op *options) {
 		op.tcpKeepAlive = keepAlive
+	}}
+}
+
+// WithTCPWriteIdleTimeout sets write idle timeout to close tcp connection.
+func WithTCPWriteIdleTimeout(idleTimeout time.Duration) Option {
+	return Option{func(op *options) {
+		op.tcpWriteIdleTimeout = idleTimeout
+	}}
+}
+
+// WithTCPReadIdleTimeout sets read idle timeout to close tcp connection.
+func WithTCPReadIdleTimeout(idleTimeout time.Duration) Option {
+	return Option{func(op *options) {
+		op.tcpReadIdleTimeout = idleTimeout
 	}}
 }
 
@@ -121,14 +139,14 @@ func WithNonBlocking(nonblock bool) Option {
 	}}
 }
 
-// WithTCPFlushWrite sets whether use flush write for TCP
+// WithTCPFlushWrite sets whether to use flush write for TCP
 // connection or not. Default value is false.
 // Deprecated: whether enable this feature is controlled by system automatically.
 func WithTCPFlushWrite(flush bool) Option {
 	return Option{func(op *options) {}}
 }
 
-// WithFlushWrite sets whether use flush write for TCP and UDP
+// WithFlushWrite sets whether to use flush write for TCP and UDP
 // connection or not. Default value is false.
 // Deprecated: whether enable this feature is controlled by system automatically.
 func WithFlushWrite(flush bool) Option {
@@ -144,7 +162,7 @@ func WithFlushWrite(flush bool) Option {
 //	  be handled by tnet, which means users cannot reuse the buffers after passing
 //	  them into Write/Writev.
 //	If safeWrite = true: the given buffers is copied into tnet's own buffer.
-//	  Therefore users can reuse the buffers passed into Write/Writev.
+//	  Therefore, users can reuse the buffers passed into Write/Writev.
 func WithSafeWrite(safeWrite bool) Option {
 	return Option{func(op *options) {
 		op.safeWrite = safeWrite
@@ -155,5 +173,15 @@ func WithSafeWrite(safeWrite bool) Option {
 func WithMaxUDPPacketSize(size int) Option {
 	return Option{func(op *options) {
 		op.maxUDPPacketSize = size
+	}}
+}
+
+// WithExactUDPBufferSizeEnabled sets whether to allocate an exact-sized buffer for UDP packets, false in default.
+// If set to true, an exact-sized buffer is allocated for each UDP packet, requiring two system calls.
+// If set to false, a fixed buffer size of maxUDPPacketSize is used, 65536 in default, requiring only one system call.
+// This option should be used in conjunction with the ReadPacket method to properly read UDP packets.
+func WithExactUDPBufferSizeEnabled(exactUDPBufferSizeEnabled bool) Option {
+	return Option{func(op *options) {
+		op.exactUDPBufferSizeEnabled = exactUDPBufferSizeEnabled
 	}}
 }

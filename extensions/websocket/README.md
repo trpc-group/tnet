@@ -1,4 +1,4 @@
-English | [中文](README.zh_CN.md)
+English | [中文](README_cn.md)
 
 # extension: websocket 
 
@@ -13,3 +13,33 @@ Features:
 * SetMetadata/GetMetadata to store/retrieve user's private data.
 * Customized control frame handler for Ping/Pong/Close.
 * Set the message type of the connection to use Read/Write API directly.
+* Combined writes optimization to merge header and payload into a single syscall.
+
+## Combined Writes Optimization
+
+By default, writing a WebSocket message requires two syscalls: one for the frame header and one for the payload data. For small messages, performance can be improved by combining these writes.
+
+With combined writes optimization enabled, the frame header and payload data are merged into a single syscall write, improving performance.
+
+### Usage Recommendations
+
+- Recommended for small message scenarios
+- Combined writes mode is disabled by default
+
+### Server Side
+
+```go
+opts := []websocket.ServerOption{
+    websocket.WithServerCombinedWrites(true),
+}
+s, err := websocket.NewService(ln, handler, opts...)
+```
+
+### Client Side
+
+```go
+opts := []websocket.ClientOption{
+    websocket.WithClientCombinedWrites(true),
+}
+conn, err := websocket.Dial(url, opts...)
+```

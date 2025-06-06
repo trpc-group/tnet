@@ -42,8 +42,8 @@ func (r *tReader) Readv(iovec []unix.Iovec) (int, error) {
 		dataLen += int(iovec[i].Len)
 	}
 	p := make([]byte, dataLen)
-	n, err := r.Reader.Read(p)
-	// 读不满n需要截断p
+	n, err := r.Read(p)
+	// If less than n is read, p needs to be truncated.
 	p = p[:n]
 	if err != nil {
 		return n, err
@@ -148,14 +148,14 @@ func TestBuffer_Skip(t *testing.T) {
 	// single node
 	err := b.Skip(3)
 	assert.Nil(t, err)
-	assert.Equal(t, uint32(6), b.rlen)
+	assert.Equal(t, uint32(6), b.rlen.Load())
 
 	assert.Nil(t, b.Skip(5))
 
 	// single node
 	err = b.Skip(1)
 	assert.Nil(t, err)
-	assert.Equal(t, uint32(0), b.rlen)
+	assert.Equal(t, uint32(0), b.rlen.Load())
 
 	assert.True(t, errors.Is(b.Skip(1), ErrNoEnoughData))
 }
@@ -331,10 +331,10 @@ func TestBuffer_Release(t *testing.T) {
 	ioData := iovec.NewIOData()
 	ioData.Reset()
 	err := b.Fill(r, len(s1), &ioData)
-	assert.Equal(t, uint32(len(s1)), b.rlen)
+	assert.Equal(t, uint32(len(s1)), b.rlen.Load())
 	assert.Nil(t, err)
 
-	// 单个Node的内容的话，不是拷贝的
+	// 单个 Node 的内容的话，不是拷贝的
 	copyHead := b.head
 	res, err := b.Next(3)
 	b.Next(3)
@@ -345,7 +345,7 @@ func TestBuffer_Release(t *testing.T) {
 	b.Release()
 	assert.NotEqual(t, copyHead, b.head)
 
-	// 多个Node的内容的话，是拷贝的
+	// 多个 Node 的内容的话，是拷贝的
 	res, err = b.Next(4)
 	assert.Nil(t, err)
 	assert.Equal(t, s1[6:10], string(res))
@@ -484,12 +484,12 @@ func TestBuffer_reset(t *testing.T) {
 	b.rnode = &node{}
 	b.wnode = &node{}
 	b.head = &node{}
-	b.rlen = 10
+	b.rlen.Store(10)
 	b.reset()
 	assert.Nil(t, b.head)
 	assert.Nil(t, b.rnode)
 	assert.Nil(t, b.wnode)
-	assert.Zero(t, b.rlen)
+	assert.Zero(t, b.rlen.Load())
 }
 
 func Test_calNodeNum(t *testing.T) {

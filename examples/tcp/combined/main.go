@@ -51,7 +51,7 @@ func main() {
 func tcpHandler(conn tnet.Conn) error {
 	header, err := conn.Peek(tcp.DataHeaderLen)
 	if errors.Is(err, tnet.EAGAIN) { // not enough data.
-		return nil
+		return err // EAGAIN error must be returned.
 	}
 	if err != nil {
 		log.Fatal(err)

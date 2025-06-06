@@ -21,12 +21,14 @@ import (
 
 	"trpc.group/trpc-go/tnet/internal/iovec"
 	"trpc.group/trpc-go/tnet/internal/netutil"
+	"trpc.group/trpc-go/tnet/internal/stat"
 	"trpc.group/trpc-go/tnet/metrics"
 )
 
 // DialTCP connects to the address on the named network within the timeout.
 // Valid networks for DialTCP are "tcp", "tcp4" (IPv4-only), "tcp6" (IPv6-only).
 func DialTCP(network, address string, timeout time.Duration) (Conn, error) {
+	reportDialTCP()
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
@@ -38,6 +40,7 @@ func DialTCP(network, address string, timeout time.Duration) (Conn, error) {
 // DialUDP connects to the address on the named network within the timeout.
 // Valid networks for DialUDP are "udp", "udp4" (IPv4-only), "udp6" (IPv6-only).
 func DialUDP(network, address string, timeout time.Duration) (PacketConn, error) {
+	reportDialUDP()
 	switch network {
 	case "udp", "udp4", "udp6":
 	default:
@@ -70,6 +73,7 @@ func dialTCP(network, address string, timeout time.Duration) (Conn, error) {
 	}
 	conn.inBuffer.Initialize()
 	conn.outBuffer.Initialize()
+	conn.closedReadBuf.Initialize(nil)
 	if err := conn.nfd.Schedule(tcpOnRead, tcpOnWrite, tcpOnHup, conn); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("dial tcp net fd schedule error: %w", err)
@@ -113,3 +117,15 @@ var (
 	dialTCPReportOnce sync.Once
 	dialUDPReportOnce sync.Once
 )
+
+func reportDialTCP() {
+	dialTCPReportOnce.Do(func() {
+		stat.Report(stat.ClientAttr, stat.TCPAttr)
+	})
+}
+
+func reportDialUDP() {
+	dialUDPReportOnce.Do(func() {
+		stat.Report(stat.ClientAttr, stat.UDPAttr)
+	})
+}

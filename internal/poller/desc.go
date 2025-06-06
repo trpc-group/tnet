@@ -15,6 +15,7 @@ package poller
 
 import (
 	"errors"
+	"sync"
 
 	"trpc.group/trpc-go/tnet/internal/iovec"
 )
@@ -34,18 +35,39 @@ func FreeDesc(desc *Desc) {
 // monitor events(such as readable, writable or hang up). When event is ready,
 // the poller will invoke the callback.
 type Desc struct {
+	mu     sync.RWMutex
 	next   *Desc
 	poller Poller
 	index  int32
-	Data   any
+	Data   interface{}
 
 	// Desc provides three callbacks for fd's reading, writing or hanging events.
-	OnRead  func(data any, ioData *iovec.IOData) error
-	OnWrite func(data any) error
-	OnHup   func(data any)
+	OnRead  func(data interface{}, ioData *iovec.IOData) error
+	OnWrite func(data interface{}) error
+	OnHup   func(data interface{})
 
 	// FD is the file descriptor that will be monitored by poller.
 	FD int
+}
+
+// RLock locks the Desc for reading.
+func (p *Desc) RLock() {
+	p.mu.RLock()
+}
+
+// RUnlock unlocks the Desc for reading.
+func (p *Desc) RUnlock() {
+	p.mu.RUnlock()
+}
+
+// Lock locks the Desc for reading and writing.
+func (p *Desc) Lock() {
+	p.mu.Lock()
+}
+
+// Unlock unlocks the Desc for reading and writing.
+func (p *Desc) Unlock() {
+	p.mu.Unlock()
 }
 
 // PickPoller binds the Desc to one poller that is from the default pollmgr.
@@ -59,7 +81,7 @@ func (p *Desc) PickPollerWithPollMgr(mgr *PollMgr) error {
 		return errors.New("already bind to poller")
 	}
 	if mgr == nil {
-		return errors.New("pollMgr is nill")
+		return errors.New("pollMgr is nil")
 	}
 	p.poller = mgr.Pick()
 	return nil

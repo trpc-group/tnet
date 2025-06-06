@@ -40,7 +40,10 @@ func TestPollMgr(t *testing.T) {
 	assert.Equal(t, 2, pollmgr.NumPollers())
 	assert.NotNil(t, pollmgr.SetNumPollers(1))
 
-	assert.NotNil(t, pollmgr.Pick())
+	p := pollmgr.Pick()
+	assert.NotNil(t, p)
+	err = p.Trigger(func() error { return nil })
+	assert.Nil(t, err)
 
 	desc := poller.NewDesc()
 	assert.NotNil(t, desc)

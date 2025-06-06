@@ -43,6 +43,12 @@ func TestPollDesc(t *testing.T) {
 	pollmgr, err := poller.NewPollMgr(poller.RoundRobin, 1)
 	assert.Nil(t, err)
 	assert.Nil(t, desc.PickPollerWithPollMgr(pollmgr))
+	// Desc has already been bound to the poller.
+	assert.NotNil(t, desc.PickPollerWithPollMgr(nil))
+
+	desc = poller.NewDesc()
+	// Mgr is nil.
+	assert.NotNil(t, desc.PickPollerWithPollMgr(nil))
 }
 
 func TestNormal(t *testing.T) {
@@ -54,7 +60,7 @@ func TestNormal(t *testing.T) {
 	pollDesc.FD = eventFD
 	pollDesc.Data = 1
 	ch := make(chan struct{}, 1)
-	pollDesc.OnRead = func(_ any, _ *iovec.IOData) error {
+	pollDesc.OnRead = func(_ interface{}, _ *iovec.IOData) error {
 		onRead++
 		ch <- struct{}{}
 		buf := make([]byte, 8)
@@ -62,7 +68,7 @@ func TestNormal(t *testing.T) {
 		return nil
 	}
 	hup := make(chan struct{}, 1)
-	pollDesc.OnHup = func(_ any) {
+	pollDesc.OnHup = func(_ interface{}) {
 		onHup = 1
 		hup <- struct{}{}
 	}
@@ -75,7 +81,7 @@ func TestNormal(t *testing.T) {
 	assert.Equal(t, n, len(buf))
 	<-ch
 	assert.Equal(t, onRead, 1)
-	pollDesc.OnRead = func(_ any, _ *iovec.IOData) error {
+	pollDesc.OnRead = func(_ interface{}, _ *iovec.IOData) error {
 		return errors.New("fake fails")
 	}
 	_, err = unix.Write(eventFD, buf)
@@ -92,4 +98,80 @@ func TestClientClose(t *testing.T) {
 	require.Nil(t, pollDesc.PickPoller())
 	unix.Close(eventFD)
 	require.NotNil(t, pollDesc.Close())
+}
+
+func TestPollDescEvent(t *testing.T) {
+	t.Run("Readable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Readable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("Writable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Writable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("ReadWriteable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.ReadWriteable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("ModReadable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Readable))
+		assert.Nil(t, desc.Control(poller.ModReadable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("ModWritable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Writable))
+		assert.Nil(t, desc.Control(poller.ModWritable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("ModReadWriteable", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Writable))
+		assert.Nil(t, desc.Control(poller.ModReadWriteable))
+		assert.Nil(t, desc.Close())
+	})
+	t.Run("Detach", func(t *testing.T) {
+		eventFD, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		require.Nil(t, err)
+		defer unix.Close(eventFD)
+		desc := poller.NewDesc()
+		desc.FD = eventFD
+		assert.Nil(t, desc.PickPoller())
+		assert.Nil(t, desc.Control(poller.Writable))
+		assert.Nil(t, desc.Control(poller.Detach))
+	})
 }

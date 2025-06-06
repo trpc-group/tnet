@@ -22,12 +22,16 @@ import (
 // Conn defines tls connection interface.
 type Conn interface {
 	net.Conn
-	// SetMetaData sets meta data. Through this method, users can bind some custom data to a connection.
-	SetMetaData(any)
+	// SetMetaData sets metadata. Through this method, users can bind some custom data to a connection.
+	SetMetaData(interface{})
 	// GetMetaData gets meta data.
-	GetMetaData() any
+	GetMetaData() interface{}
 	// SetIdleTimeout sets connection level idle timeout.
 	SetIdleTimeout(d time.Duration) error
+	// SetWriteIdleTimeout sets the write idle timeout for closing the connection.
+	SetWriteIdleTimeout(d time.Duration) error
+	// SetReadIdleTimeout sets the read idle timeout for closing the connection.
+	SetReadIdleTimeout(d time.Duration) error
 	// SetFlushWrite sets flush write flag for the connection.
 	SetFlushWrite(flushWrite bool)
 	// SetOnRequest can set or replace the tls.Handler method for a connection.
