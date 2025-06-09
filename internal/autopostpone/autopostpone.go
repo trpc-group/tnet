@@ -36,7 +36,7 @@ type PostponeWrite struct {
 	readingTryLockFailed            atomic.Uint32
 	loopCnt                         uint8
 	consecutiveSamePacketsNumCounts uint8
-	enable                          bool
+	enable                          atomic.Bool
 }
 
 // CheckAndDisablePostponeWrite changes postpone write to false if max consecutive same packets number is reached.
@@ -49,19 +49,19 @@ func (f *PostponeWrite) CheckAndDisablePostponeWrite(packetsNum int) {
 	f.consecutiveSamePacketsNumCounts++
 	if f.consecutiveSamePacketsNumCounts >= consecutiveSamePacketsNumThresh {
 		f.consecutiveSamePacketsNumCounts = 0
-		f.enable = false
+		f.enable.Store(false)
 		metrics.Add(metrics.TCPPostponeWriteOff, 1)
 	}
 }
 
 // Set sets the postpone write value manually.
 func (f *PostponeWrite) Set(postponeWrite bool) {
-	f.enable = postponeWrite
+	f.enable.Store(postponeWrite)
 }
 
 // Enabled returns whether postpone write is enabled.
 func (f *PostponeWrite) Enabled() bool {
-	return f.enable
+	return f.enable.Load()
 }
 
 // ResetLoopCnt resets loop count to 0.
@@ -79,7 +79,7 @@ func (f *PostponeWrite) IncLoopCnt() {
 // CheckLoopCnt changes postpone write to true if user handler is processed more than a certain threshold.
 func (f *PostponeWrite) CheckLoopCnt() {
 	if f.loopCnt > loopCntThresh {
-		f.enable = true
+		f.enable.Store(true)
 		metrics.Add(metrics.TCPPostponeWriteOn, 1)
 	}
 }
@@ -101,7 +101,7 @@ func (f *PostponeWrite) IncReadingTryLockFail() {
 	//   * postponeWrite=false and lots of concurrent packets on a single connection (multiplexing scenario)
 	// the failed count can be very high (>10).
 	if c := f.readingTryLockFailed.Add(1); c > readingLockContentionThresh {
-		f.enable = true
+		f.enable.Store(true)
 		metrics.Add(metrics.TCPPostponeWriteOn, 1)
 		f.ResetReadingTryLockFail()
 	}

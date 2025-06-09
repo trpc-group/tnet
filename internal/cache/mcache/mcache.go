@@ -15,6 +15,7 @@
 package mcache
 
 import (
+	"math/bits"
 	"sync"
 )
 
@@ -28,9 +29,8 @@ var caches [maxSize]sync.Pool
 func init() {
 	for i := 0; i < maxSize; i++ {
 		size := 1 << i
-		caches[i].New = func() any {
-			s := make([]byte, 0, size)
-			return s
+		caches[i].New = func() interface{} {
+			return make([]byte, 0, size)
 		}
 	}
 }
@@ -81,12 +81,7 @@ func CalIndex(capacity int) int {
 }
 
 func log2(x int) int {
-	r := 0
-	for x != 0 {
-		x = x >> 1
-		r++
-	}
-	return r - 1
+	return bits.Len(uint(x)) - 1
 }
 
 func isPowerOfTwo(x int) bool {

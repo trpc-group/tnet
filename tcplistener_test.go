@@ -14,8 +14,10 @@
 package tnet
 
 import (
+	"fmt"
 	"net"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/assert"
@@ -76,7 +78,7 @@ func TestListenerAccept(t *testing.T) {
 			continue
 		}
 		t.Run(test.network, func(t *testing.T) {
-			MassiveConnections = true
+			MassiveConnections.Store(true)
 			DefaultCleanUpThrottle = 0
 			ln, err := Listen(test.network, test.address)
 			require.Nil(t, err)
@@ -138,5 +140,58 @@ func TestListenerAcceptAfterClose(t *testing.T) {
 			_, err = ln.Accept()
 			assert.NotNil(t, err)
 		})
+	}
+}
+
+func TestListenerLocalAddr(t *testing.T) {
+	ln, err := Listen("tcp", ":0") // Use random port.
+	if err != nil {
+		t.Fatalf("Failed to listen: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	// Start server in goroutine.
+	addrChan := make(chan string, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		conn, err := ln.Accept()
+		if err != nil {
+			t.Logf("Accept error: %v", err)
+			addrChan <- ""
+			return
+		}
+		defer conn.Close()
+
+		// Return the actual local address as string.
+		addrChan <- conn.LocalAddr().String()
+	}()
+
+	// Connect to server.
+	client, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer client.Close()
+
+	// Get the actual connection local address from server.
+	localAddr := <-addrChan
+	if localAddr == "" {
+		t.Fatal("Failed to get local address from server")
+	}
+
+	t.Logf("Server connection reports LocalAddr: %s", localAddr)
+
+	// Verify it's not reporting 0.0.0.0.
+	addr, err := net.ResolveTCPAddr("tcp", localAddr)
+	if err != nil {
+		t.Fatalf("Failed to resolve TCP address %s: %v", localAddr, err)
+	}
+
+	if addr.IP.String() == "0.0.0.0" {
+		t.Errorf("LocalAddr still reports 0.0.0.0 instead of actual IP: %s", addr.IP.String())
+	} else {
+		t.Logf("LocalAddr reports correct IP: %s", addr.IP.String())
 	}
 }

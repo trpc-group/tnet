@@ -49,7 +49,9 @@ func newPoller(ignoreTaskError bool) (Poller, error) {
 		return nil, os.NewSyscallError("eventfd", err)
 	}
 	desc := alloc()
+	desc.Lock()
 	desc.FD = efd
+	desc.Unlock()
 	poller := &epoll{
 		fd:              fd,
 		desc:            desc,
@@ -73,6 +75,8 @@ type epoll struct {
 	fd              int
 	notified        int32
 	ignoreTaskError bool
+
+	freeDescCounter uint16
 }
 
 func epollWait(epfd int, events []event.EpollEvent, msec int) (n int, err error) {
@@ -86,7 +90,7 @@ func epollWait(epfd int, events []event.EpollEvent, msec int) (n int, err error)
 		r0, _, err = unix.Syscall6(unix.SYS_EPOLL_PWAIT,
 			uintptr(epfd), uintptr(_p0), uintptr(len(events)), uintptr(msec), 0, 0)
 	}
-	if err == unix.Errno(0) {
+	if errors.Is(err, unix.Errno(0)) {
 		err = nil
 	}
 	metrics.Add(metrics.EpollWait, 1)
@@ -100,7 +104,7 @@ func (ep *epoll) Wait() error {
 	msec := -1
 	for {
 		n, err := epollWait(ep.fd, ep.events, msec)
-		if err != nil && err != unix.EINTR {
+		if err != nil && !errors.Is(err, unix.EINTR) {
 			return err
 		}
 		if n <= 0 {
@@ -115,7 +119,10 @@ func (ep *epoll) Wait() error {
 
 func (ep *epoll) notify() error {
 	for {
-		if _, err := unix.Write(ep.desc.FD, ep.buf); err != unix.EINTR && err != unix.EAGAIN {
+		ep.desc.RLock()
+		fd := ep.desc.FD
+		ep.desc.RUnlock()
+		if _, err := unix.Write(fd, ep.buf); err != unix.EINTR && err != unix.EAGAIN {
 			return os.NewSyscallError("write", err)
 		}
 	}
@@ -127,11 +134,17 @@ func (ep *epoll) handle(n int) {
 	for i := 0; i < n; i++ {
 		event := ep.events[i]
 		desc := *(**Desc)(unsafe.Pointer(&event.Data))
+		desc.RLock()
+		ep.desc.RLock()
 		if desc.FD == ep.desc.FD {
 			_, _ = unix.Read(ep.desc.FD, ep.buf)
 			wakeUp = true
+			desc.RUnlock()
+			ep.desc.RUnlock()
 			continue
 		}
+		desc.RUnlock()
+		ep.desc.RUnlock()
 		// inHup guarantees that each descriptor will be appended to `hups` only once.
 		var inHup bool
 		// Read/Write and error events may be triggered at the same time,
@@ -143,7 +156,9 @@ func (ep *epoll) handle(n int) {
 		writable := event.Events&(unix.EPOLLOUT) != 0
 		// The handler function may change at runtime, so for consistency,
 		// we store them in a temporary variable.
+		desc.RLock()
 		onRead, onWrite, data := desc.OnRead, desc.OnWrite, desc.Data
+		desc.RUnlock()
 		if writable && onWrite != nil && data != nil {
 			if err := onWrite(data); err != nil {
 				log.Debugf("onWrite err: %v\n", err)
@@ -162,6 +177,8 @@ func (ep *epoll) handle(n int) {
 			// Reset length to be ready for next use.
 			ep.ioData.Reset()
 		}
+
+		// todo: handle rst package and fin package in two cases
 		if inHup {
 			hups = append(hups, desc)
 		}
@@ -174,6 +191,19 @@ func (ep *epoll) handle(n int) {
 	}
 	if len(hups) > 0 {
 		ep.detach(hups)
+		freeDesc()
+		// Reset freeDescCounter to prevent too frequent free operations.
+		ep.freeDescCounter = 0
+	} else {
+		// Always try to do the free descriptor operation.
+		// Or else the memory might not be released and lead to oom.
+		// Reference: internal issues/9.
+		ep.freeDescCounter++
+		const counterTriggerValue = 1000
+		if ep.freeDescCounter > counterTriggerValue {
+			ep.freeDescCounter = 0
+			freeDesc()
+		}
 	}
 }
 
@@ -191,13 +221,14 @@ func (ep *epoll) detach(hups []*Desc) {
 		if desc == nil {
 			continue
 		}
+		desc.RLock()
 		data, onHup := desc.Data, desc.OnHup
+		desc.RUnlock()
 		if data == nil || onHup == nil {
 			continue
 		}
 		go onHup(data)
 	}
-	freeDesc()
 }
 
 // Close closes the poller and stops Wait().
@@ -205,7 +236,10 @@ func (ep *epoll) Close() error {
 	if err := os.NewSyscallError("close", unix.Close(ep.fd)); err != nil {
 		return err
 	}
-	return os.NewSyscallError("close", unix.Close(ep.desc.FD))
+	ep.desc.RLock()
+	fd := ep.desc.FD
+	ep.desc.RUnlock()
+	return os.NewSyscallError("close", unix.Close(fd))
 }
 
 // Trigger is used to trigger the epoll to weak up from Wait().
@@ -225,27 +259,30 @@ func (ep *epoll) Control(desc *Desc, e Event) (err error) {
 			err = errors.Wrap(err, fmt.Sprintf("event: %s, connection may be closed", e))
 		}
 	}()
+	desc.RLock()
+	fd := desc.FD
+	desc.RUnlock()
 	switch e {
 	case Readable:
 		evt.Events = rflags
-		return ep.insert(desc.FD, evt)
+		return ep.insert(fd, evt)
 	case Writable:
 		evt.Events = wflags
-		return ep.insert(desc.FD, evt)
+		return ep.insert(fd, evt)
 	case ReadWriteable:
 		evt.Events = rflags | wflags
-		return ep.insert(desc.FD, evt)
+		return ep.insert(fd, evt)
 	case ModReadable:
 		evt.Events = rflags
-		return ep.interest(desc.FD, evt)
+		return ep.interest(fd, evt)
 	case ModWritable:
 		evt.Events = wflags
-		return ep.interest(desc.FD, evt)
+		return ep.interest(fd, evt)
 	case ModReadWriteable:
 		evt.Events = rflags | wflags
-		return ep.interest(desc.FD, evt)
+		return ep.interest(fd, evt)
 	case Detach:
-		return ep.remove(desc.FD)
+		return ep.remove(fd)
 	default:
 		return errors.New("Event not support")
 	}

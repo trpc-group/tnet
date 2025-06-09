@@ -69,6 +69,29 @@ func TestConvertPacketConn(t *testing.T) {
 	assert.Equal(t, helloWorld, data)
 }
 
+func TestServiceClose(t *testing.T) {
+	lns, err := tnet.ListenPackets("udp", getTestAddr(), true)
+	assert.Nil(t, err)
+	s, err := tnet.NewUDPService(lns, handler)
+	assert.Nil(t, err)
+	serviceClosed := false
+	go func() {
+		s.Serve(context.Background())
+		serviceClosed = true
+	}()
+	time.Sleep(100 * time.Millisecond)
+
+	// Service is not closed.
+	assert.False(t, serviceClosed)
+
+	// Close all conn to close service.
+	for _, ln := range lns {
+		ln.Close()
+	}
+	time.Sleep(100 * time.Millisecond)
+	assert.True(t, serviceClosed)
+}
+
 func handler(pc tnet.PacketConn) error {
 	p, addr, err := pc.ReadPacket()
 	if err != nil {

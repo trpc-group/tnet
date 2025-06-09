@@ -91,18 +91,18 @@ func Test_node_peek(t *testing.T) {
 	defer freeNode(n)
 	n.setBlock(s)
 
-	// 数据不足错误用例
+	// Data not enough error.
 	p, err := n.peek(len(s) + 1)
 	assert.Nil(t, p)
 	assert.Equal(t, ErrNoEnoughData, err)
 
-	// 第一次读取
+	// Read for the first time.
 	p, err = n.peek(4)
 	assert.Nil(t, err)
 	assert.Equal(t, s[:4], p)
 	assert.Equal(t, 0, int(n.r))
 
-	// 第二次读取
+	// Read for the second time.
 	p, err = n.peek(5)
 	assert.Nil(t, err)
 	assert.Equal(t, s[:5], p)
@@ -115,26 +115,26 @@ func Test_node_readn(t *testing.T) {
 	defer freeNode(n)
 	n.setBlock(s)
 
-	// 数据不足错误用例
+	// Data not enough error.
 	p, err := n.readn(len(s) + 1)
 	assert.Nil(t, p)
 	assert.Equal(t, ErrNoEnoughData, err)
 
-	// 第一次读取
+	// Read for the first time.
 	num1 := 4
 	p, err = n.readn(num1)
 	assert.Nil(t, err)
 	assert.Equal(t, s[:num1], p)
 	assert.Equal(t, num1, int(n.r))
 
-	// 第二次读取
+	// Read for the second time.
 	num2 := 5
 	p, err = n.readn(num2)
 	assert.Nil(t, err)
 	assert.Equal(t, s[num1:num1+num2], p)
 	assert.Equal(t, num1+num2, int(n.r))
 
-	// 数据不足错误用例
+	// Data not enough error.
 	last := len(s) - num1 - num2
 	p, err = n.readn(last + 1)
 	assert.Nil(t, p)
@@ -147,23 +147,23 @@ func Test_node_skip(t *testing.T) {
 	defer freeNode(n)
 	n.setBlock(s)
 
-	// 数据不足错误用例
+	// Data not enough error.
 	err := n.skip(len(s) + 1)
 	assert.Equal(t, ErrNoEnoughData, err)
 
-	// 第一次skip
+	// Skip for the first time.
 	num1 := 4
 	err = n.skip(num1)
 	assert.Nil(t, err)
 	assert.Equal(t, num1, int(n.r))
 
-	// 第二次读取
+	// Skip for the second time.
 	num2 := 5
 	err = n.skip(num2)
 	assert.Nil(t, err)
 	assert.Equal(t, num1+num2, int(n.r))
 
-	// 数据不足错误用例
+	// Data not enough error.
 	last := len(s) - num1 - num2
 	err = n.skip(last + 1)
 	assert.Equal(t, ErrNoEnoughData, err)
@@ -182,10 +182,10 @@ func Test_node_add(t *testing.T) {
 
 	p2 := []byte{1, 2, 3, 4, 5}
 	num = copy(n.block[n.w:], p2)
-	// 调整写指针时超出缓冲容量
+	// The buffer capacity exceeds when adjusting the write pointer.
 	err = n.add(num + 1)
 	assert.Equal(t, ErrNodeFull, err)
-	// 调整写指针时缓冲已满
+	// Buffer full when adjusting write pointer.
 	err = n.add(num)
 	assert.Nil(t, err)
 	err = n.add(num)
@@ -201,12 +201,12 @@ func Test_node_setBlock(t *testing.T) {
 	nn := allocNode()
 	defer freeNode(nn)
 	n.setBlock(s1)
-	isSameUndelayer := reflect.ValueOf(s1).Pointer() == reflect.ValueOf(n.block).Pointer()
-	assert.True(t, isSameUndelayer)
+	isSameUnderlayer := reflect.ValueOf(s1).Pointer() == reflect.ValueOf(n.block).Pointer()
+	assert.True(t, isSameUnderlayer)
 }
 
 func Test_node_reset(t *testing.T) {
-	// 可回收的node
+	// Recyclable node.
 	n := allocNode()
 	defer freeNode(n)
 	n.allocBlock()
@@ -216,7 +216,7 @@ func Test_node_reset(t *testing.T) {
 	assert.Zero(t, n.w)
 	assert.Nil(t, n.next)
 
-	// 不回收的node
+	// Not recyclable node.
 	n = allocNode()
 	defer freeNode(n)
 	n1 := allocNode()

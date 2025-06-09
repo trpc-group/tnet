@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"trpc.group/trpc-go/tnet/internal/asynctimer"
 )
 
@@ -27,7 +28,7 @@ type testWrapper struct {
 	isHandled bool
 }
 
-var expireHandle = func(data any) {
+var expireHandle = func(data interface{}) {
 	t, ok := data.(*testWrapper)
 	if !ok {
 		return
@@ -86,19 +87,40 @@ func TestTimeWheelRefresh(t *testing.T) {
 	err = tw.Add(timer)
 	assert.Nil(t, err)
 
-	refreshIntervel := 4 * timeUnit
+	refreshInterval := 4 * timeUnit
 	go func() {
-		time.Sleep(refreshIntervel)
+		time.Sleep(refreshInterval)
 		tw.Add(timer)
 	}()
 
 	time.Sleep(timeout + timeUnit)
 	assert.False(t, data.isHandled)
 
-	time.Sleep(refreshIntervel)
-	timeout += refreshIntervel
+	refreshInterval *= 2
+	time.Sleep(refreshInterval)
+	timeout += refreshInterval
 	realTimeout := data.call.Sub(data.begin)
 	assert.True(t, data.isHandled)
 	assert.GreaterOrEqual(t, realTimeout, timeout-timeUnit)
 	assert.LessOrEqual(t, realTimeout, timeout+timeUnit)
+}
+
+func TestTimerFunction(t *testing.T) {
+	timeout := time.Second * 2
+	data := &testWrapper{begin: time.Now()}
+	expireHandle := func(data interface{}) {
+		t, ok := data.(*testWrapper)
+		if !ok {
+			return
+		}
+		t.call = time.Now()
+		t.isHandled = true
+	}
+	timer := asynctimer.NewTimer(data, expireHandle, timeout)
+	require.NoError(t, asynctimer.Add(timer))
+	time.Sleep(time.Second)
+	require.NoError(t, asynctimer.Add(timer))
+	time.Sleep(time.Second)
+	require.NoError(t, asynctimer.Add(timer))
+	require.False(t, data.isHandled)
 }

@@ -54,7 +54,7 @@ func doTestCaseWithOptions(t *testing.T, tt testCase, serverOpts ...tnet.Option)
 		clientConn  net.Conn
 		waitChannel = make(chan int)
 	)
-	// 建立服务端
+	// Set up server.
 	ln, err := tnet.Listen("tcp", getTestAddr())
 	require.Nil(t, err)
 	ch := make(chan struct{}, 1)
@@ -68,12 +68,15 @@ func doTestCaseWithOptions(t *testing.T, tt testCase, serverOpts ...tnet.Option)
 	}, serverOpts...)
 	require.Nil(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		t.Log("cancel server")
+		cancel()
+	}()
 	go func() {
 		t.Log("server serve ", s.Serve(ctx))
 	}()
 
-	// 建立客户端
+	// Set up client.
 	for i := 0; i < dialRetryTimes; i++ {
 		time.Sleep(35 * time.Millisecond)
 		if tt.isTnetCliConn {
@@ -90,12 +93,12 @@ func doTestCaseWithOptions(t *testing.T, tt testCase, serverOpts ...tnet.Option)
 	}
 	require.Nil(t, err)
 	defer clientConn.Close()
-	// 执行客户端逻辑
+	// Run the client handler.
 	if tt.clientHandle != nil {
 		tt.clientHandle(t, clientConn, waitChannel)
 	}
 	<-ch
-	// 执行断言逻辑
+	// Run the control handler.
 	if tt.ctrlHandle != nil {
 		tt.ctrlHandle(t, serverConn, clientConn, waitChannel)
 	}
@@ -117,7 +120,7 @@ func TestConnClose_ClientClose(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond * 5)
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -136,7 +139,7 @@ func TestConnClose_IOClose(t *testing.T) {
 			<-ch
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -156,9 +159,9 @@ func TestConnClose_APIClose(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			assert.Nil(t, server.Close())
-			// close twice
+			// Close twice.
 			assert.Nil(t, server.Close())
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -178,10 +181,10 @@ func TestConnClose_ReadNBlocked(t *testing.T) {
 			<-ch
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
-			// make sure ReadN is blocked
+			// Make sure ReadN is blocked.
 			time.Sleep(time.Millisecond)
 			assert.Nil(t, server.Close())
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -201,11 +204,81 @@ func TestConnClose_PeekBlocked(t *testing.T) {
 			<-ch
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
-			// make sure ReadN is blocked
+			// Make sure ReadN is blocked.
 			time.Sleep(time.Millisecond)
 			assert.Nil(t, server.Close())
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
+	})
+}
+
+func TestServerConnClose_PeekBlocked(t *testing.T) {
+	doTestCase(t, testCase{
+		name: "close by server write finished, and client peek tcp buffer",
+		servHandle: func(t *testing.T, conn tnet.Conn, ch chan int) error {
+			_, err := conn.Write(helloWorld)
+			assert.Nil(t, err)
+			assert.Nil(t, conn.Close())
+			// write finished and close the connection, notify client to peek the data
+			ch <- 1
+			return nil
+		},
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			tConn, ok := conn.(tnet.Conn)
+			assert.True(t, ok)
+
+			// write a request to trigger the server to write data
+			_, err := tConn.Write(helloWorld)
+			assert.Nil(t, err)
+
+			// after server write finished and close the connection, peek the data
+			<-ch
+			// make sure the client has closed the connection
+			time.Sleep(50 * time.Millisecond)
+
+			n, err := tConn.Peek(len(helloWorld))
+			assert.Nil(t, err)
+			assert.Equal(t, helloWorld, n)
+		},
+		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
+			time.Sleep(time.Millisecond)
+			assert.Nil(t, server.Close())
+			assert.False(t, server.IsActive())
+		},
+		isTnetCliConn: true,
+	})
+}
+
+func TestClientConnClose_PeekBlocked(t *testing.T) {
+	doTestCase(t, testCase{
+		name: "close by client write finished, and server peek tcp buffer",
+		servHandle: func(t *testing.T, conn tnet.Conn, ch chan int) error {
+			// make sure the client has written data and closed the connection
+			time.Sleep(50 * time.Millisecond)
+			buf, err := conn.Peek(len(helloWorld))
+			assert.Nil(t, err)
+			assert.Equal(t, helloWorld, buf)
+			assert.Nil(t, conn.Close())
+			return nil
+		},
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			tConn, ok := conn.(tnet.Conn)
+			assert.True(t, ok)
+
+			// write a request to trigger the server to write data
+			n, err := tConn.Write(helloWorld)
+			assert.Nil(t, err)
+			assert.Equal(t, len(helloWorld), n)
+
+			assert.NoError(t, tConn.Close())
+			// write finished and close the connection, notify server to peek the data
+		},
+		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
+			time.Sleep(time.Millisecond)
+			assert.Nil(t, server.Close())
+			assert.False(t, server.IsActive())
+		},
+		isTnetCliConn: true,
 	})
 }
 
@@ -227,7 +300,7 @@ func TestConnClose_SkipBlocked(t *testing.T) {
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond)
 			assert.Nil(t, server.Close())
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -250,7 +323,7 @@ func TestConnClose_ReadBlocked(t *testing.T) {
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond)
 			assert.Nil(t, server.Close())
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -272,7 +345,7 @@ func TestConnClose_WriteError(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond)
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -300,7 +373,7 @@ func TestConnClose_ConcurrentClose(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond)
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 	})
 }
@@ -316,8 +389,8 @@ func TestConnWrite_ServHandleErr(t *testing.T) {
 			assert.Nil(t, err)
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
-			time.Sleep(100 * time.Millisecond)
-			assert.Equal(t, false, server.IsActive())
+			time.Sleep(time.Millisecond)
+			assert.False(t, server.IsActive())
 		},
 		isTnetCliConn: true,
 	})
@@ -387,7 +460,7 @@ func TestConnRead_BufferFull(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			<-ch
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 		},
 		isTnetCliConn: true,
 	})
@@ -762,7 +835,7 @@ func TestConn_SetKeepAlive_err(t *testing.T) {
 		},
 		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
 			time.Sleep(time.Millisecond * 5)
-			assert.Equal(t, false, server.IsActive())
+			assert.False(t, server.IsActive())
 			err := server.SetKeepAlive(0)
 			assert.NotNil(t, err)
 		},
@@ -771,6 +844,87 @@ func TestConn_SetKeepAlive_err(t *testing.T) {
 	tt.name = "set keepAlive when conn closed"
 	tt.isTnetCliConn = true
 	doTestCase(t, tt)
+}
+
+func TestConn_SetReadIdleTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.Nil(t, err)
+	tcp, err := tnet.DialTCP("tcp", ln.Addr().String(), 1*time.Second)
+	assert.Nil(t, err)
+	err = tcp.Close()
+	assert.Nil(t, err)
+	err = tcp.SetReadIdleTimeout(1 * time.Second)
+	assert.Equal(t, err, tnet.ErrConnClosed)
+	svrHandle := func(t *testing.T, conn tnet.Conn, ch chan int) error {
+		_, err := conn.ReadN(20)
+		assert.Equal(t, err, tnet.ErrConnClosed)
+		ch <- 1
+		return nil
+	}
+	tt := testCase{
+		servHandle:    svrHandle,
+		isTnetCliConn: true,
+		name:          "ReadIdleTimeout 1 second close client",
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			_, err := conn.Write([]byte("x"))
+			assert.Nil(t, err)
+			<-ch
+		},
+	}
+	readIdleTimeout := tnet.WithTCPReadIdleTimeout(1 * time.Second)
+	doTestCase(t, tt, readIdleTimeout)
+}
+
+func TestConn_SetWriteIdleTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.Nil(t, err)
+	tcp, err := tnet.DialTCP("tcp", ln.Addr().String(), 1*time.Second)
+	assert.Nil(t, err)
+	err = tcp.Close()
+	assert.Nil(t, err)
+	err = tcp.SetWriteIdleTimeout(1 * time.Second)
+	assert.Equal(t, err, tnet.ErrConnClosed)
+	ln, err = net.Listen("tcp", "127.0.0.1:0")
+	assert.Nil(t, err)
+	tcp, err = tnet.DialTCP("tcp", ln.Addr().String(), 1*time.Second)
+	assert.Nil(t, err)
+	err = tcp.SetWriteIdleTimeout(1 * time.Second)
+	assert.Nil(t, err)
+	err = tcp.SetWriteIdleTimeout(1 * time.Second)
+	assert.Nil(t, err)
+	err = tcp.SetReadIdleTimeout(1 * time.Second)
+	assert.Nil(t, err)
+	err = tcp.SetReadIdleTimeout(1 * time.Second)
+	assert.Nil(t, err)
+	err = tcp.Close()
+	assert.Nil(t, err)
+	svrHandle := func(t *testing.T, conn tnet.Conn, ch chan int) error {
+		str, err := conn.ReadN(1)
+		assert.Nil(t, err)
+		assert.Equal(t, "x", string(str))
+		time.Sleep(1 * time.Second)
+		_, err = conn.Write([]byte("helloworld"))
+		assert.Nil(t, err)
+		_, err = conn.ReadN(20)
+		assert.Equal(t, err, tnet.ErrConnClosed)
+		ch <- 1
+		return nil
+	}
+	tt := testCase{
+		servHandle:    svrHandle,
+		isTnetCliConn: true,
+		name:          "WriteIdleTimeout 3 seconds close client",
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			_, err := conn.Write([]byte("x"))
+			assert.Nil(t, err)
+			buf := make([]byte, 10)
+			_, err = conn.Read(buf)
+			assert.Nil(t, err)
+			<-ch
+		},
+	}
+	writeIdleTimeout := tnet.WithTCPWriteIdleTimeout(2 * time.Second)
+	doTestCase(t, tt, writeIdleTimeout)
 }
 
 func TestConn_SetIdleTimeout(t *testing.T) {
@@ -790,7 +944,6 @@ func TestConn_SetIdleTimeout(t *testing.T) {
 			<-ch
 		},
 	}
-
 	idleTimeout := tnet.WithTCPIdleTimeout(time.Second)
 	doTestCase(t, tt, idleTimeout)
 }
@@ -832,10 +985,14 @@ func TestConnRead_NonBlocking(t *testing.T) {
 
 func TestConn_OnClose(t *testing.T) {
 	onClosed := func(conn tnet.Conn) error {
-		_, err := conn.Next(1)
-		assert.Equal(t, tnet.ErrConnClosed, err)
+		// After conn.Close(), we can read the data from the connection buffer,
+		// but we can't write data to the connection
+		buf, err := conn.Next(1)
+		assert.NoError(t, err)
+		assert.Equal(t, buf[0], helloWorld[0])
+
 		_, err = conn.Write(helloWorld)
-		assert.Equal(t, tnet.ErrConnClosed, err)
+		assert.Error(t, err)
 		data := conn.GetMetaData()
 		assert.Equal(t, helloWorld, data.([]byte))
 		return nil
@@ -863,7 +1020,7 @@ func TestMassiveConnections(t *testing.T) {
 	defer func() {
 		tnet.DefaultCleanUpThrottle = oldVal
 	}()
-	tnet.MassiveConnections = true
+	tnet.MassiveConnections.Store(true)
 	massiveConnCnt, packetsPerConn := 5, 10
 	ln, err := tnet.Listen("tcp", getTestAddr())
 	require.Nil(t, err)
@@ -895,4 +1052,36 @@ func TestMassiveConnections(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestResetIdleTimeout(t *testing.T) {
+	ln, err := tnet.Listen("tcp", getTestAddr())
+	require.Nil(t, err)
+	s, err := tnet.NewTCPService(ln, func(conn tnet.Conn) error {
+		buf, err := conn.ReadN(len(hello))
+		require.Nil(t, err)
+		_, err = conn.Write(buf)
+		require.Nil(t, err)
+		return err
+	})
+	require.Nil(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Serve(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	conn, err := tnet.DialTCP("tcp", ln.Addr().String(), time.Second)
+	require.Nil(t, err)
+	idleTimeout := time.Second
+	conn.SetIdleTimeout(idleTimeout)
+	time.Sleep(idleTimeout * 2)
+	require.False(t, conn.IsActive())
+
+	conn, err = tnet.DialTCP("tcp", ln.Addr().String(), time.Second)
+	require.Nil(t, err)
+	conn.SetIdleTimeout(idleTimeout)
+	conn.SetIdleTimeout(-1) // Clear idle timeout.
+	time.Sleep(idleTimeout * 2)
+	require.True(t, conn.IsActive())
 }

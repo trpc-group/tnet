@@ -1,3 +1,16 @@
+//
+//
+// Tencent is pleased to support the open source community by making tRPC available.
+//
+// Copyright (C) 2023 THL A29 Limited, a Tencent company.
+// All rights reserved.
+//
+// If you have downloaded a copy of the tRPC source code from Tencent,
+// please note that tRPC source code is licensed under the  Apache 2.0 License,
+// A copy of the Apache 2.0 License is included in this file.
+//
+//
+
 // Package log provides logging utilities for tnet.
 package log
 
@@ -39,73 +52,73 @@ var encoderConfig = zapcore.EncoderConfig{
 // Logger provides a unified logging interface.
 type Logger interface {
 	// Debug logs to DEBUG log. Arguments are handled in the manner of fmt.Print.
-	Debug(args ...any)
+	Debug(args ...interface{})
 	// Debugf logs to DEBUG log. Arguments are handled in the manner of fmt.Printf.
-	Debugf(format string, args ...any)
+	Debugf(format string, args ...interface{})
 	// Info logs to INFO log. Arguments are handled in the manner of fmt.Print.
-	Info(args ...any)
+	Info(args ...interface{})
 	// Infof logs to INFO log. Arguments are handled in the manner of fmt.Printf.
-	Infof(format string, args ...any)
+	Infof(format string, args ...interface{})
 	// Warn logs to WARNING log. Arguments are handled in the manner of fmt.Print.
-	Warn(args ...any)
+	Warn(args ...interface{})
 	// Warnf logs to WARNING log. Arguments are handled in the manner of fmt.Printf.
-	Warnf(format string, args ...any)
+	Warnf(format string, args ...interface{})
 	// Error logs to ERROR log. Arguments are handled in the manner of fmt.Print.
-	Error(args ...any)
+	Error(args ...interface{})
 	// Errorf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
-	Errorf(format string, args ...any)
+	Errorf(format string, args ...interface{})
 	// Fatal logs to ERROR log. Arguments are handled in the manner of fmt.Print.
-	Fatal(args ...any)
+	Fatal(args ...interface{})
 	// Fatalf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
-	Fatalf(format string, args ...any)
+	Fatalf(format string, args ...interface{})
 }
 
 // Debug logs to DEBUG log. Arguments are handled in the manner of fmt.Print.
-func Debug(args ...any) {
+func Debug(args ...interface{}) {
 	Default.Debug(args...)
 }
 
 // Debugf logs to DEBUG log. Arguments are handled in the manner of fmt.Printf.
-func Debugf(format string, args ...any) {
+func Debugf(format string, args ...interface{}) {
 	Default.Debugf(format, args...)
 }
 
 // Info logs to INFO log. Arguments are handled in the manner of fmt.Print.
-func Info(args ...any) {
+func Info(args ...interface{}) {
 	Default.Info(args...)
 }
 
 // Infof logs to INFO log. Arguments are handled in the manner of fmt.Printf.
-func Infof(format string, args ...any) {
+func Infof(format string, args ...interface{}) {
 	Default.Infof(format, args...)
 }
 
 // Warn logs to WARNING log. Arguments are handled in the manner of fmt.Print.
-func Warn(args ...any) {
+func Warn(args ...interface{}) {
 	Default.Warn(args...)
 }
 
 // Warnf logs to WARNING log. Arguments are handled in the manner of fmt.Printf.
-func Warnf(format string, args ...any) {
+func Warnf(format string, args ...interface{}) {
 	Default.Warnf(format, args...)
 }
 
 // Error logs to ERROR log. Arguments are handled in the manner of fmt.Print.
-func Error(args ...any) {
+func Error(args ...interface{}) {
 	Default.Error(args...)
 }
 
 // Errorf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
-func Errorf(format string, args ...any) {
+func Errorf(format string, args ...interface{}) {
 	Default.Errorf(format, args...)
 }
 
 // Fatal logs to ERROR log. Arguments are handled in the manner of fmt.Print.
-func Fatal(args ...any) {
+func Fatal(args ...interface{}) {
 	Default.Fatal(args...)
 }
 
 // Fatalf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
-func Fatalf(format string, args ...any) {
+func Fatalf(format string, args ...interface{}) {
 	Default.Fatalf(format, args...)
 }

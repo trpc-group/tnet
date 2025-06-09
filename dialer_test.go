@@ -187,7 +187,7 @@ func startNetUDPServer(t *testing.T, network, address string, ch chan string) {
 }
 
 func startTnetUDPServer(t *testing.T, network, address string, ch chan string) {
-	lns, err := tnet.ListenPackets(network, address, true)
+	lns, err := tnet.ListenPackets(network, address, false)
 	require.Nil(t, err)
 	s, err := tnet.NewUDPService(lns, func(conn tnet.PacketConn) error {
 		req := make([]byte, 1024)

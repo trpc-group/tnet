@@ -1,4 +1,4 @@
-English | [中文](README.zh_CN.md)
+[English](README.md) | 中文
 
 # Websocket examples: echo
 
@@ -21,7 +21,7 @@ receive type: Binary, data: helloworld
 
 ## Websocket over TLS
 
-* start server 
+* start server
 
 ```shell
 $ go run server/main.go -enabletls
@@ -40,14 +40,14 @@ receive type: Binary, data: helloworld
 
 If users want to write multiple byte slices into one message, use `WritevMessage`:
 
-```golang
+```go
 // writev message example:
 if err := c.WritevMessage(websocket.Binary, hello, world); err != nil {
-	log.Fatal(err)
+    log.Fatal(err)
 }
 tp, data, err = c.ReadMessage()
 if err != nil {
-	log.Fatal(err)
+    log.Fatal(err)
 }
 fmt.Printf("receive type: %s, data: %s\n", tp, data)
 ```

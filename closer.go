@@ -13,7 +13,9 @@
 
 package tnet
 
-import "trpc.group/trpc-go/tnet/internal/safejob"
+import (
+	"trpc.group/trpc-go/tnet/internal/safejob"
+)
 
 type key int
 

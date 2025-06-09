@@ -18,10 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 
+	goreuseport "github.com/kavu/go_reuseport"
 	"trpc.group/trpc-go/tnet/internal/netutil"
 	"trpc.group/trpc-go/tnet/internal/poller"
-	goreuseport "trpc.group/trpc-go/tnet/internal/reuseport"
+	"trpc.group/trpc-go/tnet/internal/stat"
 	"trpc.group/trpc-go/tnet/log"
 )
 
@@ -39,10 +41,12 @@ func newUDPService(lns []PacketConn, handler UDPHandler, opt ...Option) (Service
 	for _, o := range opt {
 		o.f(&opts)
 	}
+	wg := &sync.WaitGroup{}
+	wg.Add(len(lns))
 	s := &udpservice{
-		reqHandle: handler,
-		opts:      opts,
-		hupCh:     make(chan struct{}),
+		reqHandle:     handler,
+		opts:          opts,
+		allConnClosed: wg,
 	}
 	for _, ln := range lns {
 		conn, ok := ln.(*udpconn)
@@ -50,6 +54,8 @@ func newUDPService(lns []PacketConn, handler UDPHandler, opt ...Option) (Service
 			return nil, fmt.Errorf("listeners are not of udpconn type: %T, they should be created by tnet.ListenPackets", ln)
 		}
 		conn.SetMaxPacketSize(s.opts.maxUDPPacketSize)
+		conn.SetExactUDPBufferSizeEnabled(s.opts.exactUDPBufferSizeEnabled)
+		conn.closeService = wg
 		s.conns = append(s.conns, conn)
 	}
 	return s, nil
@@ -115,14 +121,16 @@ func newUDPConn(listener net.PacketConn) (*udpconn, error) {
 }
 
 type udpservice struct {
-	reqHandle UDPHandler
-	hupCh     chan struct{}
-	conns     []*udpconn
-	opts      options
+	reqHandle     UDPHandler
+	conns         []*udpconn
+	opts          options
+	allConnClosed *sync.WaitGroup
 }
 
 // Serve starts the service.
 func (s *udpservice) Serve(ctx context.Context) error {
+	stat.Report(stat.ServerAttr, stat.UDPAttr)
+
 	defer s.close()
 	for _, conn := range s.conns {
 		if err := conn.SetOnRequest(s.reqHandle); err != nil {
@@ -141,11 +149,17 @@ func (s *udpservice) Serve(ctx context.Context) error {
 	log.Infof("tnet udp service started, current number of pollers: %d, use tnet.SetNumPollers to change it\n",
 		poller.NumPollers())
 
+	allConnClosed := make(chan struct{})
+	go func() {
+		s.allConnClosed.Wait()
+		close(allConnClosed)
+	}()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-s.hupCh:
-		return errors.New("service is closed")
+	case <-allConnClosed:
+		return errors.New("all connection is closed")
 	}
 }
 
@@ -162,7 +176,7 @@ func validateListeners(lns []PacketConn) error {
 	if len(lns) == 0 {
 		return errors.New("listeners can't be nil")
 	}
-	// Ensure that all lisnters are listening to the same address.
+	// Ensure that all listeners are listening to the same address.
 	firstAddr := lns[0].LocalAddr()
 	for i := 1; i < len(lns); i++ {
 		if addr := lns[i].LocalAddr(); addr.String() != firstAddr.String() {

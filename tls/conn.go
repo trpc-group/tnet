@@ -24,22 +24,32 @@ import (
 type conn struct {
 	*tls.Conn
 	raw      tnet.Conn
-	metaData any
+	metaData interface{}
 }
 
 // SetMetaData sets meta data.
-func (c *conn) SetMetaData(m any) {
+func (c *conn) SetMetaData(m interface{}) {
 	c.metaData = m
 }
 
 // GetMetaData gets meta data.
-func (c *conn) GetMetaData() any {
+func (c *conn) GetMetaData() interface{} {
 	return c.metaData
 }
 
 // SetIdleTimeout sets connection level idle timeout.
 func (c *conn) SetIdleTimeout(d time.Duration) error {
 	return c.raw.SetIdleTimeout(d)
+}
+
+// SetWriteIdleTimeout sets the write idle timeout for closing the connection.
+func (c *conn) SetWriteIdleTimeout(d time.Duration) error {
+	return c.raw.SetWriteIdleTimeout(d)
+}
+
+// SetReadIdleTimeout sets the read idle timeout for closing the connection.
+func (c *conn) SetReadIdleTimeout(d time.Duration) error {
+	return c.raw.SetReadIdleTimeout(d)
 }
 
 // SetFlushWrite sets flush write flag for the connection.

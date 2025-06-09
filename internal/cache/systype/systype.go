@@ -33,7 +33,7 @@ type IOVECWrapper struct {
 }
 
 var iovecPool sync.Pool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return &IOVECWrapper{
 			iovec: make([]unix.Iovec, 0, MaxLen),
 		}
@@ -81,7 +81,7 @@ type IOData struct {
 }
 
 var ioDataPool sync.Pool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return &IOData{
 			D: make([][]byte, 0, MaxLen),
 		}
@@ -107,25 +107,14 @@ func PutIOData(d *IOData) {
 	ioDataPool.Put(d)
 }
 
-// -------------------------------------MMsghdr------------------------------------
+//-------------------------------------MMsghdr------------------------------------
 
-// MMsghdr is the input parameter of recvmmsg.
-type MMsghdr struct {
-	Hdr unix.Msghdr
-	Len uint32
-	_   [4]byte // Pad with 4 bytes to align 64bit machine.
-}
-
-var (
-	// mmsghdrs => []MMsghdr
-	mmsghdrsPool sync.Pool
-)
-
-func init() {
-	mmsghdrsPool.New = func() any {
+// mmsghdrs => []MMsghdr
+var mmsghdrsPool = sync.Pool{
+	New: func() interface{} {
 		mmsghdrs := make([]MMsghdr, MaxLen)
 		return mmsghdrs
-	}
+	},
 }
 
 // GetMMsghdrs gets a []mmsghdr with fixed capacity.
@@ -141,10 +130,11 @@ func GetMMsghdrs(size int) []MMsghdr {
 
 // BuildMMsg fills MMsghdr with name and buffer.
 func BuildMMsg(m *MMsghdr, name, buf []byte) {
-	m.Hdr.Iov = &unix.Iovec{}
 	m.Hdr.Iovlen = 1
-	m.Hdr.Iov.Base = (*byte)(unsafe.Pointer(&buf[0]))
-	m.Hdr.Iov.Len = convertUint(len(buf))
+	m.Hdr.Iov = &unix.Iovec{
+		Base: (*byte)(unsafe.Pointer(&buf[0])),
+		Len:  convertUint(len(buf)),
+	}
 	m.Hdr.Name = (*byte)(unsafe.Pointer(&name[0]))
 	m.Hdr.Namelen = uint32(len(name))
 }
@@ -155,4 +145,38 @@ func PutMMsghdrs(mmsghdrs []MMsghdr) {
 		return
 	}
 	mmsghdrsPool.Put(mmsghdrs[:0])
+}
+
+//-------------------------------------Msghdr------------------------------------
+
+// Msghdr is the input parameter of recvmsg.
+type Msghdr unix.Msghdr
+
+// msghdrPool => Msghdr
+var msghdrPool = sync.Pool{
+	New: func() interface{} {
+		return &Msghdr{}
+	},
+}
+
+// GetMsghdr gets a Msghdr with fixed capacity.
+// Release it with PutMsghdr.
+func GetMsghdr() *Msghdr {
+	return msghdrPool.Get().(*Msghdr)
+}
+
+// BuildMsg fills Msghdr with name and buffer.
+func BuildMsg(m *Msghdr, name, buf []byte) {
+	m.Iovlen = 1
+	m.Iov = &unix.Iovec{
+		Base: (*byte)(unsafe.Pointer(&buf[0])),
+		Len:  convertUint(len(buf)),
+	}
+	m.Name = (*byte)(unsafe.Pointer(&name[0]))
+	m.Namelen = uint32(len(name))
+}
+
+// PutMsghdr release a Msghdr.
+func PutMsghdr(msghdr *Msghdr) {
+	msghdrPool.Put(msghdr)
 }

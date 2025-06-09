@@ -14,6 +14,7 @@
 package websocket_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -21,10 +22,28 @@ import (
 	"trpc.group/trpc-go/tnet/extensions/websocket"
 )
 
+func TestReadAnyMessage(t *testing.T) {
+	runTestWithHandles(t, func(conn websocket.Conn) error {
+		tp, buf, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		require.Nil(t, conn.WriteMessage(tp, buf))
+		return nil
+	}, func(conn websocket.Conn) error {
+		require.Nil(t, conn.WriteMessage(websocket.Binary, hello))
+		_, _, err := conn.ReadMessage()
+		require.Nil(t, err)
+		return nil
+	}, nil)
+}
+
 func TestControlHandlers(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()
-		require.Nil(t, err)
+		if err != nil {
+			return err
+		}
 		require.Equal(t, websocket.Binary, tp)
 		require.Nil(t, conn.WriteMessage(websocket.Binary, buf))
 		return nil
@@ -61,7 +80,9 @@ func TestDefaultControlHandlers(t *testing.T) {
 		conn.SetPingHandler(nil)
 		conn.SetPongHandler(nil)
 		tp, buf, err := conn.ReadMessage()
-		require.Nil(t, err)
+		if err != nil {
+			return err
+		}
 		require.Equal(t, websocket.Binary, tp)
 		require.Nil(t, conn.WriteMessage(websocket.Binary, buf))
 		return nil
@@ -81,7 +102,13 @@ func TestNormalClose(t *testing.T) {
 		require.Nil(t, conn.Close())
 		return nil
 	}, func(conn websocket.Conn) error {
-		require.Nil(t, conn.WriteMessage(websocket.Binary, hello))
+		if err := conn.WriteMessage(websocket.Text, hello); err != nil {
+			// Ignore `conn is closed` and `broken pipes` errors because the server may have been already closed.
+			if strings.Contains(err.Error(), "closed") || strings.Contains(err.Error(), "broken pipe") {
+				return nil
+			}
+			return err
+		}
 		_, _, err := conn.ReadMessage()
 		require.NotNil(t, err)
 		time.Sleep(time.Millisecond)

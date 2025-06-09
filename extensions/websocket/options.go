@@ -40,6 +40,7 @@ type serverOptions struct {
 	keepAlive           time.Duration
 	idleTimeout         time.Duration
 	onClosed            func(Conn) error
+	combineWrites       bool
 }
 
 // ServerOption is the type for a single server option.
@@ -138,11 +139,19 @@ func WithOnClosed(onClosed func(Conn) error) ServerOption {
 	}
 }
 
+// WithServerCombinedWrites returns an Option to enable/disable combining header and payload writes.
+func WithServerCombinedWrites(enabled bool) ServerOption {
+	return func(o *serverOptions) {
+		o.combineWrites = enabled
+	}
+}
+
 type clientOptions struct {
-	timeout      time.Duration
-	subprotocols []string
-	messageType  MessageType
-	tlsConfig    *tls.Config
+	timeout       time.Duration
+	subprotocols  []string
+	messageType   MessageType
+	tlsConfig     *tls.Config
+	combineWrites bool
 }
 
 func (o *clientOptions) setDefaults() {
@@ -179,5 +188,12 @@ func WithClientMessageType(tp MessageType) ClientOption {
 func WithClientTLSConfig(cfg *tls.Config) ClientOption {
 	return func(o *clientOptions) {
 		o.tlsConfig = cfg
+	}
+}
+
+// WithClientCombinedWrites returns an Option to enable/disable combining header and payload writes.
+func WithClientCombinedWrites(enabled bool) ClientOption {
+	return func(o *clientOptions) {
+		o.combineWrites = enabled
 	}
 }

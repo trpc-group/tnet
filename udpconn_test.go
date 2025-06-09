@@ -41,7 +41,7 @@ func doUDPTestCase(t *testing.T, tt udpTestCase, serverOpts ...tnet.Option) {
 		clientConn  net.Conn
 		waitChannel = make(chan int)
 	)
-	// 建立服务端
+	// Set up server.
 	serverAddr := getTestAddr()
 	lns, err := tnet.ListenPackets("udp", serverAddr, true)
 	require.Nil(t, err)
@@ -58,7 +58,7 @@ func doUDPTestCase(t *testing.T, tt udpTestCase, serverOpts ...tnet.Option) {
 	defer cancel()
 	go s.Serve(ctx)
 
-	// 建立客户端
+	// Set up client.
 	time.Sleep(time.Millisecond * 5)
 	if tt.isTnetCliConn {
 		clientConn, err = tnet.DialUDP("udp", serverAddr, 5*time.Second)
@@ -67,11 +67,11 @@ func doUDPTestCase(t *testing.T, tt udpTestCase, serverOpts ...tnet.Option) {
 	}
 	require.Nil(t, err)
 	defer clientConn.Close()
-	// 执行客户端逻辑
+	// Run the client handler.
 	if tt.clientHandle != nil {
 		tt.clientHandle(t, clientConn, waitChannel)
 	}
-	// 执行断言逻辑
+	// Run the control handler.
 	if tt.ctrlHandle != nil {
 		tt.ctrlHandle(t, serverConn, clientConn, waitChannel)
 	}
@@ -117,9 +117,9 @@ func TestUDPConnClose_APIClose(t *testing.T) {
 		ctrlHandle: func(t *testing.T, server []tnet.PacketConn, client net.Conn, ch chan int) {
 			for _, s := range server {
 				assert.Nil(t, s.Close())
-				// close twice
+				// Close twice.
 				assert.Nil(t, s.Close())
-				assert.Equal(t, false, s.IsActive())
+				assert.False(t, s.IsActive())
 			}
 		},
 	})
@@ -139,7 +139,7 @@ func TestUDPConnClose_ReadPacketBlocked(t *testing.T) {
 			time.Sleep(time.Millisecond * 100)
 			for _, c := range server {
 				assert.Nil(t, c.Close())
-				assert.Equal(t, false, c.IsActive())
+				assert.False(t, c.IsActive())
 			}
 		},
 	})

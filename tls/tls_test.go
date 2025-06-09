@@ -40,6 +40,8 @@ func TestTLS(t *testing.T) {
 	rand.Read(hello)
 	runTestWithHandles(t, func(c tls.Conn) error {
 		c.SetIdleTimeout(time.Second)
+		c.SetReadIdleTimeout(time.Second)
+		c.SetWriteIdleTimeout(time.Second)
 		c.SetMetaData(0)
 		require.Equal(t, 0, c.GetMetaData().(int))
 		buf := make([]byte, len(hello))
@@ -50,15 +52,15 @@ func TestTLS(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, hello[:n], buf[:n])
 		c.SetFlushWrite(false)
-		n, err = c.Write(buf)
+		_, err = c.Write(buf)
 		require.Nil(t, err)
 		return nil
 	}, func(c tls.Conn) error {
 		require.True(t, c.IsActive())
-		n, err := c.Write(hello)
+		_, err := c.Write(hello)
 		require.Nil(t, err)
 		buf := make([]byte, len(hello))
-		n, err = c.Read(buf)
+		n, err := c.Read(buf)
 		require.Nil(t, err)
 		require.Equal(t, hello[:n], buf[:n])
 		return nil
