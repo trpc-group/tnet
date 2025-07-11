@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
-// This file may have been modified by THL A29 Limited ("Tencent Modifications").
-// All Tencent Modifications are Copyright (C) 2023 THL A29 Limited.
+// This file may have been modified by Tencent.
+// All Tencent Modifications are Copyright (C) 2023 Tencent.
 
 //go:build linux && (ppc64 || ppc64le)
 
