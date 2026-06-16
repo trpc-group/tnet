@@ -72,6 +72,61 @@ func TestClientHandle(t *testing.T) {
 	<-done // Wait for server closing.
 }
 
+func TestWSSClientSetOnRequestAndSetOnClosed(t *testing.T) {
+	serverConnCh := make(chan websocket.Conn, 1)
+	echoedCh := make(chan []byte, 1)
+	done := make(chan struct{})
+	addr, cancel := runServer(t, func(conn websocket.Conn) error {
+		tp, buf, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		require.Equal(t, websocket.Text, tp)
+		echoedCh <- buf
+		return nil
+	}, done, websocket.WithServerTLSConfig(getTLSCfg()), websocket.WithHookAfterHandshake(func(ctx context.Context, c websocket.Conn) error {
+		serverConnCh <- c
+		return nil
+	}))
+	clientConn, err := websocket.Dial(wssURLPrefix+addr, websocket.WithClientTLSConfig(&stdtls.Config{InsecureSkipVerify: true}))
+	require.NoError(t, err)
+	closedCh := make(chan struct{}, 1)
+	clientHandle := func(conn websocket.Conn) error {
+		tp, buf, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		require.Equal(t, websocket.Text, tp)
+		return conn.WriteMessage(websocket.Text, buf)
+	}
+	require.NoError(t, clientConn.SetOnRequest(clientHandle))
+	require.NoError(t, clientConn.SetOnClosed(func(c websocket.Conn) error {
+		closedCh <- struct{}{}
+		return nil
+	}))
+	var serverConn websocket.Conn
+	select {
+	case serverConn = <-serverConnCh:
+	case <-time.After(time.Second):
+		t.Fatal("server connection was not established")
+	}
+	require.NoError(t, serverConn.WriteMessage(websocket.Text, world))
+	select {
+	case echoed := <-echoedCh:
+		require.Equal(t, world, echoed)
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive echoed message")
+	}
+	require.NoError(t, clientConn.Close())
+	select {
+	case <-closedCh:
+	case <-time.After(time.Second):
+		t.Fatal("client close hook was not called")
+	}
+	cancel()
+	<-done // Wait for server closing.
+}
+
 func TestServer(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		tp, buf, err := conn.ReadMessage()

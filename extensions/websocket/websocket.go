@@ -232,3 +232,8 @@ type Conn interface {
 	// SetOnClosed set on closed function for websocket connection.
 	SetOnClosed(handle OnClosed) error
 }
+
+// HandshakeHeader writes additional HTTP headers during the WebSocket handshake.
+type HandshakeHeader interface {
+	io.WriterTo
+}

@@ -14,6 +14,31 @@ Features:
 * Customized control frame handler for Ping/Pong/Close.
 * Set the message type of the connection to use Read/Write API directly.
 * Combined writes optimization to merge header and payload into a single syscall.
+* Client handshake header injection and response header hooks.
+
+## Handshake Headers
+
+You can write additional HTTP headers to the client handshake request and inspect
+non-WebSocket headers from the handshake response.
+
+Note that the key/value bytes received by callback are only valid until the
+callback returns.
+
+To inspect a non-101 handshake response, use `WithClientOnHandshakeResponseStatusError`.
+
+```go
+reqHeader := http.Header{}
+reqHeader.Set("X-Token", "abc")
+
+opts := []websocket.ClientOption{
+    websocket.WithClientHandshakeRequestHeaderHTTP(reqHeader),
+    websocket.WithClientOnHandshakeResponseHeader(func(key, value []byte) error {
+        // Copy key/value if you need to keep them after this callback returns.
+        return nil
+    }),
+}
+conn, err := websocket.Dial(url, opts...)
+```
 
 ## Combined Writes Optimization
 

@@ -36,16 +36,16 @@ type conn struct {
 	// leading to the need for an additional lock here to ensure that the packet header and
 	// the packet body are written to the connection as a whole.
 	// Note: This lock does not guarantee concurrent safety when reading message.
-	mu          sync.Mutex
-	raw         rawConnection
-	metaData    interface{}
-	role        ws.State    // ws.StateServerSide or ws.StateClientSide.
-	reader      io.Reader   // connection-wise message type reader for Read.
-	messageType MessageType // connection-wise message type for Read/Write.
-	subprotocol string      // the subprotocol selected during handshake.
-	pingHandler func(c Conn, data []byte) error
-	pongHandler func(c Conn, data []byte) error
-
+	mu            sync.Mutex
+	raw           rawConnection
+	metaData      interface{}
+	role          ws.State    // ws.StateServerSide or ws.StateClientSide.
+	source        io.Reader   // It is used as the frame source for reads.
+	reader        io.Reader   // connection-wise message type reader for Read.
+	messageType   MessageType // connection-wise message type for Read/Write.
+	subprotocol   string      // the subprotocol selected during handshake.
+	pingHandler   func(c Conn, data []byte) error
+	pongHandler   func(c Conn, data []byte) error
 	combineWrites bool // Controls if header and payload writes are combined into a single syscall.
 }
 
@@ -435,11 +435,18 @@ func (c *conn) SetAsyncPongHandler(handler func(Conn, []byte) error) {
 
 func (c *conn) newReader(handler wsutil.FrameHandlerFunc) *wsutil.Reader {
 	return &wsutil.Reader{
-		Source:         c.raw,
+		Source:         c.readSource(),
 		State:          c.role,
 		CheckUTF8:      true,
 		OnIntermediate: handler,
 	}
+}
+
+func (c *conn) readSource() io.Reader {
+	if c.source != nil {
+		return c.source
+	}
+	return c.raw
 }
 
 func (c *conn) newControlFrameHandler() wsutil.FrameHandlerFunc {
@@ -525,6 +532,12 @@ func (c *conn) SetOnRequest(handler Handler) error {
 			return handleWithOptions(conn, handler, &o)
 		})
 	}
+	if tc, ok := c.raw.(tls.Conn); ok {
+		return tc.SetOnRequest(func(tls.Conn) error {
+			o := defaultServerOptions
+			return handleWithOptions(c.raw, handler, &o)
+		})
+	}
 	return errors.New("websocket.conn is expected to have raw to be tnet.Conn in SetOnRequest")
 }
 
@@ -532,6 +545,9 @@ func (c *conn) SetOnRequest(handler Handler) error {
 func (c *conn) SetOnClosed(oc OnClosed) error {
 	if tc, ok := c.raw.(tnet.Conn); ok {
 		return tc.SetOnClosed(onClosed(oc))
+	}
+	if tc, ok := c.raw.(tls.Conn); ok {
+		return tc.SetOnClosed(onClosedTLS(oc))
 	}
 	return errors.New("websocket.conn is expected to have raw to be tnet.Conn in SetOnClosed")
 }

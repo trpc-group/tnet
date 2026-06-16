@@ -14,6 +14,29 @@ websocket 扩展结合了 [tnet](https://trpc.group/trpc-go/tnet) 和 [gobwas/ws
 * 可对控制帧进行自定义处理
 * 可以通过选项设置连接上的消息类型，从而直接使用 Read/Write API
 * 提供了合并写入优化，可以将消息头和负载合并为一次系统调用写入
+* 支持客户端握手 Header 注入与响应 Header 回调
+
+## 握手 Header
+
+客户端可以在握手请求中写入额外的 HTTP Header，并在握手响应中读取非 WebSocket 的 Header。
+
+注意：回调里收到的 key/value 字节切片仅在回调返回前有效，如需保留请自行拷贝。
+
+如需在握手返回非 101 状态码时检查响应内容，可使用 `WithClientOnHandshakeResponseStatusError`。
+
+```go
+reqHeader := http.Header{}
+reqHeader.Set("X-Token", "abc")
+
+opts := []websocket.ClientOption{
+    websocket.WithClientHandshakeRequestHeaderHTTP(reqHeader),
+    websocket.WithClientOnHandshakeResponseHeader(func(key, value []byte) error {
+        // Copy key/value if you need to keep them after this callback returns.
+        return nil
+    }),
+}
+conn, err := websocket.Dial(url, opts...)
+```
 
 ## 合并写入优化
 
