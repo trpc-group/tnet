@@ -87,14 +87,15 @@ func (t *tcpListener) accept(handle OnTCPOpened) (net.Conn, error) {
 			laddr:   localAddr,
 			raddr:   netutil.SockaddrToTCPOrUnixAddr(sa),
 		},
-		readTrigger: make(chan struct{}, 1),
+		readTrigger:    make(chan struct{}, 1),
+		closedFinished: make(chan struct{}, 1),
 	}
 	if !MassiveConnections.Load() {
 		conn.writevData = iovec.NewIOData(iovec.WithLength(systype.MaxLen))
 	}
 	conn.inBuffer.Initialize()
 	conn.outBuffer.Initialize()
-	conn.closedReadBuf.Initialize(nil)
+	conn.closedReadBuf.Initialize(nil, ErrConnClosed)
 	if handle != nil {
 		if err := handle(conn); err != nil {
 			conn.Close()

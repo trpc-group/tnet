@@ -26,6 +26,11 @@ import (
 	"trpc.group/trpc-go/tnet/internal/netutil"
 )
 
+const (
+	listenerAcceptTimeout  = time.Second
+	listenerAcceptInterval = 10 * time.Millisecond
+)
+
 func TestListen(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -95,7 +100,13 @@ func TestListenerAccept(t *testing.T) {
 			require.Nil(t, err)
 			defer client.Close()
 
-			conn, err := ln.Accept()
+			var conn net.Conn
+			require.Eventually(t, func() bool {
+				conn, err = ln.Accept()
+				return err == nil && conn != nil
+			}, listenerAcceptTimeout, listenerAcceptInterval, "accept connection failed: %v", err)
+			require.NotNil(t, conn)
+			defer conn.Close()
 			c := conn.(*tcpconn)
 			t.Logf("conn size: %v\n", unsafe.Sizeof(*c))
 			t.Logf("c.writevData.IsNil(): %v\n", c.writevData.IsNil())

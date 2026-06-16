@@ -213,7 +213,8 @@ func (nfd *netFD) WriteTo(data []byte, addr net.Addr) (int, error) {
 		return 0, errors.New("address can't be nil")
 	}
 	if len(data) > nfd.udpBufferSize {
-		return 0, fmt.Errorf("data length %d is too long, the max udp buffer size is %d", len(data), nfd.udpBufferSize)
+		return 0, fmt.Errorf("data length %d is too long, the max udp buffer size is %d: %w",
+			len(data), nfd.udpBufferSize, unix.EMSGSIZE)
 	}
 	sa, err := netutil.AddrToSockAddr(nfd.laddr, addr)
 	if err != nil {

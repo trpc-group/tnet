@@ -64,6 +64,12 @@ var bufferPool = sync.Pool{
 
 // Buffer implements buffer chains to store data, it's safe to access data concurrently.
 // The internal locker can make sure that only one reader and writer will be accessing data at any time.
+/*
+  Buffer data structure diagram:
+  head          rnode         wnode         tail
+   ↓             ↓             ↓             ↓
+  node → node → node → node → node → node → node
+*/
 type Buffer struct {
 	head  *node
 	tail  *node
@@ -75,7 +81,11 @@ type Buffer struct {
 	// wlock can make sure only one writer to modify wlen.
 	wlock sync.Mutex
 
+	// rlen denotes the number of bytes that can be read from the buffer.
+	// It increases when data is written and decreases when data is read.
 	rlen atomic.Uint32
+	// wlen denotes the number of bytes that can be written to the buffer.
+	// It increases when new nodes are added and decreases when data is written.
 	wlen atomic.Uint32
 
 	// nodeBlockSize denotes the size of the block when adding
@@ -139,6 +149,9 @@ func SetCleanUp(b bool) {
 func (b *Buffer) Peek(n int) ([]byte, error) {
 	if n < 0 {
 		return nil, ErrInvalidParam
+	}
+	if n == 0 {
+		return []byte{}, nil
 	}
 	b.rlock.Lock()
 	defer b.rlock.Unlock()
@@ -224,6 +237,9 @@ func (b *Buffer) Skip(n int) error {
 func (b *Buffer) Next(n int) ([]byte, error) {
 	if n < 0 {
 		return nil, ErrInvalidParam
+	}
+	if n == 0 {
+		return []byte{}, nil
 	}
 	b.rlock.Lock()
 	defer b.rlock.Unlock()
@@ -329,14 +345,15 @@ func (b *Buffer) PeekBlocks(data [][]byte) int {
 	var blocks int
 	for rest, rnode := b.LenRead(), b.rnode; blocks < len(data) && rest > 0; rnode = rnode.next {
 		l := rnode.len()
-		if l != 0 {
-			if l > rest {
-				l = rest
-			}
-			data[blocks] = rnode.block[rnode.r : int(rnode.r)+l]
-			rest -= l
-			blocks++
+		if l == 0 {
+			continue
 		}
+		if l > rest {
+			l = rest
+		}
+		data[blocks] = rnode.block[rnode.r : int(rnode.r)+l]
+		rest -= l
+		blocks++
 	}
 	return blocks
 }
@@ -662,8 +679,8 @@ func (b *Buffer) Release() {
 	}
 	// Update NodeBlockSize as the maximum readLength
 	// to minimize node allocation.
-	if b.enableAutoNodeBlockSize && uint32(readLength) > b.nodeBlockSize && readLength < maxNodeBlockSize {
-		for b.nodeBlockSize < uint32(readLength) {
+	if b.enableAutoNodeBlockSize && readLength <= maxNodeBlockSize {
+		for int64(b.nodeBlockSize) < int64(readLength) && b.nodeBlockSize*2 <= maxNodeBlockSize {
 			b.nodeBlockSize <<= 1
 		}
 	}

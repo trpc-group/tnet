@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sys/unix"
 	"trpc.group/trpc-go/tnet/internal/netutil"
 )
 
@@ -124,4 +125,16 @@ func Test_netFD_WriteToIPv4(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, len(helloWorld), n)
 	<-wait
+}
+
+func Test_WriteTo_TooLong(t *testing.T) {
+	rawConn, err := rawListenUDP("udp4")
+	assert.Nil(t, err)
+	defer rawConn.Close()
+	nfd, err := rawToNetFD(rawConn)
+	assert.Nil(t, err)
+	addr := net.ParseIP("127.0.0.1")
+	_, err = nfd.WriteTo(make([]byte, defaultUDPBufferSize+1), &net.UDPAddr{IP: addr, Port: 0})
+	assert.NotNil(t, err)
+	assert.ErrorIs(t, err, unix.EMSGSIZE)
 }

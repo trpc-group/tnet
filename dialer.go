@@ -14,6 +14,7 @@
 package tnet
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -28,13 +29,28 @@ import (
 // DialTCP connects to the address on the named network within the timeout.
 // Valid networks for DialTCP are "tcp", "tcp4" (IPv4-only), "tcp6" (IPv6-only).
 func DialTCP(network, address string, timeout time.Duration) (Conn, error) {
+	return dialTCP(context.Background(), network, address, timeout)
+}
+
+// DialContextTCP connects to the address on the named network using the provided context.
+// Valid networks for DialTCP are "tcp", "tcp4" (IPv4-only), "tcp6" (IPv6-only).
+func DialContextTCP(ctx context.Context, network, address string) (Conn, error) {
+	return dialTCP(ctx, network, address, 0)
+}
+
+func dialTCP(ctx context.Context, network, address string, timeout time.Duration) (Conn, error) {
 	reportDialTCP()
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
 		return nil, fmt.Errorf("DialTCP: unknown network %s", network)
 	}
-	return dialTCP(network, address, timeout)
+	d := net.Dialer{Timeout: timeout}
+	c, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, fmt.Errorf("dial network %s, address %s with timeout %+v error: %w", network, address, timeout, err)
+	}
+	return newTCPConn(c, network)
 }
 
 // DialUDP connects to the address on the named network within the timeout.
@@ -49,11 +65,7 @@ func DialUDP(network, address string, timeout time.Duration) (PacketConn, error)
 	return dialUDP(network, address, timeout)
 }
 
-func dialTCP(network, address string, timeout time.Duration) (Conn, error) {
-	c, err := net.DialTimeout(network, address, timeout)
-	if err != nil {
-		return nil, fmt.Errorf("dial network %s, address %s with timeout %+v error: %w", network, address, timeout, err)
-	}
+func newTCPConn(c net.Conn, network string) (Conn, error) {
 	fd, err := netutil.GetFD(c)
 	if err != nil {
 		c.Close()
@@ -68,12 +80,13 @@ func dialTCP(network, address string, timeout time.Duration) (Conn, error) {
 			raddr:   c.RemoteAddr(),
 			network: network,
 		},
-		readTrigger: make(chan struct{}, 1),
-		writevData:  iovec.NewIOData(),
+		readTrigger:    make(chan struct{}, 1),
+		closedFinished: make(chan struct{}, 1),
+		writevData:     iovec.NewIOData(),
 	}
 	conn.inBuffer.Initialize()
 	conn.outBuffer.Initialize()
-	conn.closedReadBuf.Initialize(nil)
+	conn.closedReadBuf.Initialize(nil, ErrConnClosed)
 	if err := conn.nfd.Schedule(tcpOnRead, tcpOnWrite, tcpOnHup, conn); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("dial tcp net fd schedule error: %w", err)
