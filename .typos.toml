@@ -1,0 +1,5 @@
+[default.extend-words]
+hel = "hel"
+lok = "lok"
+UNKOWN = "UNKOWN"
+Writeable = "Writeable"
