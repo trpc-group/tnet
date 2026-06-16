@@ -16,6 +16,7 @@ package tnet_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -163,6 +164,69 @@ func TestConnClose_APIClose(t *testing.T) {
 			assert.Nil(t, server.Close())
 			assert.False(t, server.IsActive())
 		},
+	})
+}
+
+func TestConnCloseOnWaitingRead(t *testing.T) {
+	doTestCase(t, testCase{
+		name: "close on waiting read",
+		servHandle: func(t *testing.T, conn tnet.Conn, ch chan int) error {
+			_, err := conn.Read(make([]byte, 1024))
+			assert.Nil(t, err)
+			fmt.Println("server read")
+			<-ch
+			conn.Close()
+			return nil
+		},
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			_, err := conn.Write(helloWorld)
+			assert.Nil(t, err)
+
+			go func() {
+				// sleep 10ms to make sure conn enter waiting read
+				time.Sleep(10 * time.Millisecond)
+				ch <- 1
+			}()
+			n, err := conn.Read(make([]byte, 1024))
+
+			assert.Equal(t, tnet.ErrConnClosed, err)
+			assert.Equal(t, 0, n)
+		},
+		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
+			assert.False(t, server.IsActive())
+		},
+		isTnetCliConn: true,
+	})
+}
+
+func TestServerWriteAndClose(t *testing.T) {
+	doTestCase(t, testCase{
+		name: "server write and close",
+		servHandle: func(t *testing.T, conn tnet.Conn, ch chan int) error {
+			_, err := conn.Write(helloWorld)
+			assert.Nil(t, err)
+			err = conn.Close()
+			assert.Nil(t, err)
+			ch <- 1
+			return nil
+		},
+		clientHandle: func(t *testing.T, conn net.Conn, ch chan int) {
+			_, err := conn.Write(helloWorld)
+			assert.Nil(t, err)
+			buf := make([]byte, 1024)
+			n, err := conn.Read(buf)
+			assert.Nil(t, err)
+			assert.Equal(t, helloWorld, buf[:n])
+			<-ch
+			time.Sleep(1 * time.Millisecond)
+			tcpconn, ok := conn.(tnet.Conn)
+			assert.True(t, ok)
+			assert.False(t, tcpconn.IsActive())
+		},
+		ctrlHandle: func(t *testing.T, server tnet.Conn, client net.Conn, ch chan int) {
+			assert.False(t, server.IsActive())
+		},
+		isTnetCliConn: true,
 	})
 }
 

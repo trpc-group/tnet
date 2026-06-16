@@ -15,9 +15,12 @@ package buffer
 
 import (
 	"bytes"
-	"io"
 	"testing"
+
+	"github.com/pkg/errors"
 )
+
+var testExpectedErr = errors.New("expected error")
 
 func TestFixedReadBuffer(t *testing.T) {
 	// Table-driven test cases
@@ -77,7 +80,7 @@ func TestFixedReadBuffer(t *testing.T) {
 			initData:    []byte{},
 			readSize:    1,
 			expected:    []byte{},
-			expectError: io.EOF,
+			expectError: testExpectedErr,
 		},
 		{
 			name:        "Read after all data consumed",
@@ -89,7 +92,7 @@ func TestFixedReadBuffer(t *testing.T) {
 				// Try to read again after all data consumed
 				data := make([]byte, 1)
 				n, err := buf.Read(data)
-				if n != 0 || err != io.EOF {
+				if n != 0 || err != testExpectedErr {
 					t.Errorf("Expected EOF after all data consumed, got: err=%v, n=%d", err, n)
 				}
 			},
@@ -100,7 +103,7 @@ func TestFixedReadBuffer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create and initialize buffer
 			buf := &FixedReadBuffer{}
-			buf.Initialize(tt.initData)
+			buf.Initialize(tt.initData, testExpectedErr)
 
 			// Read data
 			data := make([]byte, tt.readSize)
@@ -152,7 +155,7 @@ func TestFixedReadBuffer_Peek(t *testing.T) {
 			initData:    []byte("hello"),
 			peekSize:    10,
 			expected:    nil,
-			expectError: io.EOF,
+			expectError: testExpectedErr,
 			validate: func(t *testing.T, buf *FixedReadBuffer) {
 				// Ensure peek didn't change buffer state even on error
 				if buf.LenRead() != 5 {
@@ -191,7 +194,7 @@ func TestFixedReadBuffer_Peek(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &FixedReadBuffer{}
-			buf.Initialize(tt.initData)
+			buf.Initialize(tt.initData, testExpectedErr)
 
 			// Check initial length
 			initialLen := buf.LenRead()
@@ -249,7 +252,7 @@ func TestFixedReadBuffer_Skip(t *testing.T) {
 			name:        "Skip more data than available",
 			initData:    []byte("hello"),
 			skipSize:    10,
-			expectError: io.EOF,
+			expectError: testExpectedErr,
 		},
 		{
 			name:        "Skip with negative size",
@@ -274,7 +277,7 @@ func TestFixedReadBuffer_Skip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &FixedReadBuffer{}
-			buf.Initialize(tt.initData)
+			buf.Initialize(tt.initData, testExpectedErr)
 
 			err := buf.Skip(tt.skipSize)
 
@@ -322,7 +325,7 @@ func TestFixedReadBuffer_Next(t *testing.T) {
 			initData:    []byte("hello"),
 			nextSize:    10,
 			expected:    nil,
-			expectError: io.EOF,
+			expectError: testExpectedErr,
 		},
 		{
 			name:        "Next with negative size",
@@ -349,7 +352,7 @@ func TestFixedReadBuffer_Next(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &FixedReadBuffer{}
-			buf.Initialize(tt.initData)
+			buf.Initialize(tt.initData, testExpectedErr)
 
 			data, err := buf.Next(tt.nextSize)
 
@@ -401,7 +404,7 @@ func TestFixedReadBuffer_ReadN(t *testing.T) {
 			initData:    []byte("hello"),
 			readSize:    10,
 			expected:    nil,
-			expectError: io.EOF,
+			expectError: testExpectedErr,
 		},
 		{
 			name:        "ReadN with negative size",
@@ -428,7 +431,7 @@ func TestFixedReadBuffer_ReadN(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := &FixedReadBuffer{}
-			buf.Initialize(tt.initData)
+			buf.Initialize(tt.initData, testExpectedErr)
 
 			data, err := buf.ReadN(tt.readSize)
 
@@ -451,7 +454,7 @@ func TestFixedReadBuffer_LenAndPos(t *testing.T) {
 	buf := &FixedReadBuffer{}
 	data := []byte("hello world")
 
-	buf.Initialize(data)
+	buf.Initialize(data, testExpectedErr)
 
 	// Test initial state
 	if buf.LenRead() != len(data) {
@@ -485,19 +488,19 @@ func TestFixedReadBuffer_LenAndPos(t *testing.T) {
 func TestFixedReadBuffer_EdgeCases(t *testing.T) {
 	t.Run("Zero size buffer", func(t *testing.T) {
 		buf := &FixedReadBuffer{}
-		buf.Initialize([]byte{})
+		buf.Initialize([]byte{}, testExpectedErr)
 
 		// Read should return EOF
 		data := make([]byte, 1)
 		n, err := buf.Read(data)
-		if n != 0 || err != io.EOF {
+		if n != 0 || err != testExpectedErr {
 			t.Errorf("Reading from empty buffer should return EOF")
 		}
 	})
 
 	t.Run("Concurrent read safety", func(t *testing.T) {
 		buf := &FixedReadBuffer{}
-		buf.Initialize(make([]byte, 100))
+		buf.Initialize(make([]byte, 100), testExpectedErr)
 		done := make(chan bool)
 
 		// Start multiple concurrent read goroutines
@@ -506,7 +509,7 @@ func TestFixedReadBuffer_EdgeCases(t *testing.T) {
 				data := make([]byte, 10)
 				for j := 0; j < 10; j++ {
 					_, err := buf.Read(data)
-					if err != nil && err != io.EOF {
+					if err != nil && err != testExpectedErr {
 						t.Errorf("Failed to read data: err=%v", err)
 					}
 				}
@@ -529,7 +532,7 @@ func TestFixedReadBuffer_EdgeCases(t *testing.T) {
 			largeData[i] = byte(i % chunkSize)
 		}
 
-		buf.Initialize(largeData)
+		buf.Initialize(largeData, testExpectedErr)
 
 		// Read in multiple chunks
 		for i := 0; i < chunkNum; i++ {

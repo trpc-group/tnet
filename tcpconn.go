@@ -61,6 +61,7 @@ type tcpconn struct {
 	reqHandle      atomic.Value
 	closeHandle    atomic.Value
 	readTrigger    chan struct{}
+	closedFinished chan struct{}
 	inBuffer       buffer.Buffer
 	outBuffer      buffer.Buffer
 	closedReadBuf  buffer.FixedReadBuffer
@@ -103,17 +104,27 @@ func checkAndSetBufferCleanUp() {
 }
 
 // Read reads data from the tcpconn.
-func (tc *tcpconn) Read(b []byte) (int, error) {
+func (tc *tcpconn) Read(b []byte) (n int, err error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-	if !tc.IsActive() {
-		return tc.closedReadBuf.Read(b)
-	}
-	if !tc.beginJobSafely(apiRead) {
+
+	isLocked := false
+	defer func() {
+		// release apiRead lock first to avoid deadlock with closedFinished
+		if isLocked {
+			tc.endJobSafely(apiRead)
+		}
+		// if conn is closed,  wait storeReadBuffer finished and read from closedReadBuf
+		if tc.needReadFromClosedReadBuf(err) {
+			tc.waitReadFromClosedReadBuf()
+			n, err = tc.closedReadBuf.Read(b)
+		}
+	}()
+
+	if isLocked = tc.beginJobSafely(apiRead); !isLocked {
 		return 0, ErrConnClosed
 	}
-	defer tc.endJobSafely(apiRead)
 
 	if err := tc.waitRead(1); err != nil {
 		return 0, err
@@ -122,20 +133,28 @@ func (tc *tcpconn) Read(b []byte) (int, error) {
 }
 
 // ReadN reads fixed length of data from the tcpconn.
-func (tc *tcpconn) ReadN(n int) ([]byte, error) {
-	if !tc.IsActive() {
-		return tc.closedReadBuf.ReadN(n)
-	}
-	if !tc.beginJobSafely(apiRead) {
+func (tc *tcpconn) ReadN(n int) (bytes []byte, err error) {
+	isLocked := false
+	defer func() {
+		// release apiRead lock to avoid deadlock with closedFinished
+		if isLocked {
+			tc.endJobSafely(apiRead)
+		}
+		// if conn is closed, lock closeProcess job to wait storeReadBuffer finished and read from closedReadBuf
+		if tc.needReadFromClosedReadBuf(err) {
+			tc.waitReadFromClosedReadBuf()
+			bytes, err = tc.closedReadBuf.ReadN(n)
+		}
+	}()
+	if isLocked = tc.beginJobSafely(apiRead); !isLocked {
 		return nil, ErrConnClosed
 	}
-	defer tc.endJobSafely(apiRead)
 
 	if err := tc.waitRead(n); err != nil {
 		return nil, err
 	}
 	dst := make([]byte, n)
-	_, err := tc.inBuffer.Read(dst)
+	_, err = tc.inBuffer.Read(dst)
 	if err != nil {
 		return nil, err
 	}
@@ -143,14 +162,23 @@ func (tc *tcpconn) ReadN(n int) ([]byte, error) {
 }
 
 // Next reads fixed length of data from the tcpconn.
-func (tc *tcpconn) Next(n int) ([]byte, error) {
-	if !tc.IsActive() {
-		return tc.closedReadBuf.Next(n)
-	}
-	if !tc.beginJobSafely(apiRead) {
+func (tc *tcpconn) Next(n int) (bytes []byte, err error) {
+	isLocked := false
+	defer func() {
+		// release apiRead lock to avoid deadlock with closedFinished
+		if isLocked {
+			tc.endJobSafely(apiRead)
+		}
+		// if conn is closed, lock closeProcess job to wait storeReadBuffer finished and read from closedReadBuf
+		if tc.needReadFromClosedReadBuf(err) {
+			tc.waitReadFromClosedReadBuf()
+			bytes, err = tc.closedReadBuf.Next(n)
+		}
+	}()
+
+	if isLocked = tc.beginJobSafely(apiRead); !isLocked {
 		return nil, ErrConnClosed
 	}
-	defer tc.endJobSafely(apiRead)
 
 	if err := tc.waitRead(n); err != nil {
 		return nil, err
@@ -161,14 +189,23 @@ func (tc *tcpconn) Next(n int) ([]byte, error) {
 // Peek returns the next n bytes without advancing the reader. It waits until it has
 // read at least n bytes or error has occurred such as connection closed or read timeout.
 // The bytes stop being valid at the next ReadN or Release call.
-func (tc *tcpconn) Peek(n int) ([]byte, error) {
-	if !tc.IsActive() {
-		return tc.closedReadBuf.Peek(n)
-	}
-	if !tc.beginJobSafely(apiRead) {
+func (tc *tcpconn) Peek(n int) (bytes []byte, err error) {
+	isLocked := false
+	defer func() {
+		// release apiRead lock to avoid deadlock with closedFinished
+		if isLocked {
+			tc.endJobSafely(apiRead)
+		}
+		// if conn is closed,  wait storeReadBuffer finished and read from closedReadBuf
+		if tc.needReadFromClosedReadBuf(err) {
+			tc.waitReadFromClosedReadBuf()
+			bytes, err = tc.closedReadBuf.Peek(n)
+		}
+	}()
+
+	if isLocked = tc.beginJobSafely(apiRead); !isLocked {
 		return nil, ErrConnClosed
 	}
-	defer tc.endJobSafely(apiRead)
 
 	if err := tc.waitRead(n); err != nil {
 		return nil, err
@@ -178,14 +215,24 @@ func (tc *tcpconn) Peek(n int) ([]byte, error) {
 
 // Skip skips the next n bytes and advances the reader. It waits until the underlayer has at
 // least n bytes or error has occurred such as connection closed or read timeout.
-func (tc *tcpconn) Skip(n int) error {
-	if !tc.IsActive() {
-		return tc.closedReadBuf.Skip(n)
-	}
-	if !tc.beginJobSafely(apiRead) {
+func (tc *tcpconn) Skip(n int) (err error) {
+	isLocked := false
+	defer func() {
+		// release apiRead lock to avoid deadlock with closedFinished
+		if isLocked {
+			tc.endJobSafely(apiRead)
+		}
+		// if conn is closed, lock closeProcess job to make sure storeReadBuffer finished and read from closedReadBuf
+		if tc.needReadFromClosedReadBuf(err) {
+			tc.waitReadFromClosedReadBuf()
+			err = tc.closedReadBuf.Skip(n)
+		}
+	}()
+
+	if isLocked = tc.beginJobSafely(apiRead); !isLocked {
+		// lock failed, conn is closed
 		return ErrConnClosed
 	}
-	defer tc.endJobSafely(apiRead)
 
 	if err := tc.waitRead(n); err != nil {
 		return err
@@ -229,9 +276,13 @@ func (tc *tcpconn) waitRead(n int) error {
 	return nil
 }
 
-func (tc *tcpconn) timeoutError() error {
-	err := fmt.Errorf("read tcp %s->%s: i/o timeout",
-		tc.LocalAddr().String(), tc.RemoteAddr().String())
+func (tc *tcpconn) readTimeoutErr() error {
+	err := fmt.Errorf("read tcp %s->%s: i/o timeout", tc.RemoteAddr().String(), tc.LocalAddr().String())
+	return netError{error: err, isTimeout: true}
+}
+
+func (tc *tcpconn) writeTimeoutErr() error {
+	err := fmt.Errorf("write tcp %s->%s: i/o timeout", tc.LocalAddr().String(), tc.RemoteAddr().String())
 	return netError{error: err, isTimeout: true}
 }
 
@@ -239,7 +290,7 @@ func (tc *tcpconn) waitReadWithTimeout(n int) error {
 	tc.rtimer.Start()
 	select {
 	case <-tc.rtimer.Wait():
-		return tc.timeoutError()
+		return tc.readTimeoutErr()
 	default:
 	}
 	for tc.inBuffer.LenRead() < n {
@@ -250,7 +301,10 @@ func (tc *tcpconn) waitReadWithTimeout(n int) error {
 		case <-tc.readTrigger:
 			continue
 		case <-tc.rtimer.Wait():
-			return tc.timeoutError()
+			if tc.inBuffer.LenRead() >= n {
+				return nil
+			}
+			return tc.readTimeoutErr()
 		}
 	}
 	return nil
@@ -266,7 +320,7 @@ func (tc *tcpconn) Write(b []byte) (int, error) {
 // Writev provides multiple data slice write in order.
 func (tc *tcpconn) Writev(p ...[]byte) (int, error) {
 	if tc.wtimer != nil && tc.wtimer.Expired() {
-		return 0, tc.timeoutError()
+		return 0, tc.writeTimeoutErr()
 	}
 	if !tc.beginJobSafely(apiWrite) {
 		return 0, ErrConnClosed
@@ -376,6 +430,8 @@ func (tc *tcpconn) flush() error {
 
 // Close closes the tcpconn safely, it can be called multiple times concurrently.
 func (tc *tcpconn) Close() error {
+	// mark conn as closed and close read trigger firstly
+	// to release apiRead lock
 	if !tc.beginJobSafely(closeAll) {
 		return nil
 	}
@@ -387,8 +443,13 @@ func (tc *tcpconn) Close() error {
 	// Stop all jobs safely.
 	tc.closeAllJobs()
 
-	// all job closed, restore read buffer to closedBuffer.
+	// read buffer to closedBuffer.
+	// execute after all jobs closed to avoid concurrent modified inBuffer.
 	tc.storeReadBuffer()
+	// close closedTrigger to wakeup all routines which try to read from closedReadBuf.
+	// close before closeHandle to avoid Read/ReadN/Peek/Next/Skip blocked in closeHandle.
+	// close after storeReadBuffer to make sure storeReadBuffer finished.
+	close(tc.closedFinished)
 
 	// Execute user-defined closing process.
 	if closeHandle := tc.getOnClosed(); closeHandle != nil {
@@ -824,6 +885,24 @@ func (tc *tcpconn) storeReadBuffer() error {
 		return err
 	}
 
-	tc.closedReadBuf.Initialize(buf[:n])
+	tc.closedReadBuf.Initialize(buf[:n], ErrConnClosed)
 	return nil
+}
+
+// check if need read from closedReadBuf
+func (tc *tcpconn) needReadFromClosedReadBuf(err error) bool {
+	return !tc.IsActive() && errors.Is(err, ErrConnClosed)
+}
+
+// waitReadFromClosedReadBuf wait read from closedReadBuf
+func (tc *tcpconn) waitReadFromClosedReadBuf() {
+	select {
+	case <-tc.closedFinished:
+		// closedFinished is closed, storeReadBuffer finished, read from closedReadBuf
+		return
+	case <-time.After(10 * time.Millisecond):
+		// defensive, close closedFinished to unblock waitReadFromClosedReadBuf
+		log.Infof("tcpconn waitReadFromClosedReadBuf timeout")
+		return
+	}
 }

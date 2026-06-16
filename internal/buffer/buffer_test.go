@@ -101,6 +101,7 @@ func TestBuffer_Write(t *testing.T) {
 func TestBuffer_Peek(t *testing.T) {
 	b := New()
 	defer Free(b)
+
 	s1, s2 := []byte{1, 2, 3}, []byte{4, 5, 6}
 	b.Writev(false, s1, s2)
 
@@ -123,6 +124,33 @@ func TestBuffer_Peek(t *testing.T) {
 
 	_, err = b.Peek(7)
 	assert.Equal(t, err, ErrNoEnoughData)
+
+	err = b.Skip(len(s1) + len(s2))
+	assert.Nil(t, err)
+	chain := &chain{}
+	chain.initialize(false, []byte{1, 2, 3})
+	b.addChain(chain)
+	b.PeekBlocks([][]byte{nil})
+}
+
+func TestBuffer_Peek_zero(t *testing.T) {
+	b := New()
+	defer Free(b)
+
+	res, err := b.Peek(0)
+	assert.Nil(t, err)
+	assert.Len(t, res, 0)
+	assert.NotNil(t, b.head)
+	assert.Equal(t, b.head, b.rnode)
+
+	b.Writev(false, []byte{1, 2, 3})
+	res, err = b.Peek(0)
+	assert.Nil(t, err)
+	assert.Len(t, res, 0)
+
+	res, err = b.Peek(3)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{1, 2, 3}, res)
 }
 
 func TestBuffer_Peek_err(t *testing.T) {
@@ -189,6 +217,30 @@ func TestBuffer_Next(t *testing.T) {
 	res, err = b.Next(6)
 	assert.Nil(t, err)
 	assert.Equal(t, []byte{4, 5, 6, 7, 8, 9}, res)
+}
+
+func TestBuffer_Next_zero(t *testing.T) {
+	b := New()
+	defer Free(b)
+
+	res, err := b.Next(0)
+	assert.Nil(t, err)
+	assert.Len(t, res, 0)
+	assert.NotNil(t, b.head)
+	assert.Equal(t, b.head, b.rnode)
+
+	b.Writev(false, []byte{1, 2, 3})
+	assert.Equal(t, 3, b.LenRead())
+
+	res, err = b.Next(0)
+	assert.Nil(t, err)
+	assert.Len(t, res, 0)
+	assert.Equal(t, 3, b.LenRead())
+
+	res, err = b.Next(3)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{1, 2, 3}, res)
+	assert.Zero(t, b.LenRead())
 }
 
 func TestBuffer_Next_err(t *testing.T) {

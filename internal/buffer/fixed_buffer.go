@@ -15,7 +15,6 @@
 package buffer
 
 import (
-	"io"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -24,19 +23,21 @@ import (
 // FixedReadBuffer is a fixed size buffer for reading.
 // It's concurrent safe in Read, Peek, Skip, Next, ReadN.
 type FixedReadBuffer struct {
-	buf  []byte
-	rlen atomic.Uint32
-	pos  atomic.Uint32
-	lock sync.Mutex
+	buf    []byte
+	rlen   atomic.Uint32
+	pos    atomic.Uint32
+	lock   sync.Mutex
+	eofErr error
 }
 
 // Initialize initializes the buffer with the given buffer.
-func (b *FixedReadBuffer) Initialize(buf []byte) {
+func (b *FixedReadBuffer) Initialize(buf []byte, eofErr error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	b.buf = buf
 	b.rlen.Store(uint32(len(buf)))
 	b.pos.Store(0)
+	b.eofErr = eofErr
 }
 
 // Read copies data from buffer and advances the pointer, it will release unused buffer automatically.
@@ -51,7 +52,7 @@ func (b *FixedReadBuffer) Read(p []byte) (int, error) {
 
 	rlen := b.LenRead()
 	if rlen == 0 {
-		return 0, io.EOF
+		return 0, b.eofErr
 	}
 
 	if rlen < n {
@@ -81,7 +82,7 @@ func (b *FixedReadBuffer) Peek(n int) ([]byte, error) {
 
 	rlen := b.LenRead()
 	if rlen < n {
-		return nil, io.EOF
+		return nil, b.eofErr
 	}
 
 	curPos := b.CurPos()
@@ -104,7 +105,7 @@ func (b *FixedReadBuffer) Skip(n int) error {
 
 	rlen := b.LenRead()
 	if rlen < n {
-		return io.EOF
+		return b.eofErr
 	}
 
 	b.pos.Add(uint32(n))
@@ -129,7 +130,7 @@ func (b *FixedReadBuffer) Next(n int) ([]byte, error) {
 
 	rlen := b.LenRead()
 	if rlen < n {
-		return nil, io.EOF
+		return nil, b.eofErr
 	}
 
 	curPos := b.CurPos()
@@ -152,7 +153,7 @@ func (b *FixedReadBuffer) ReadN(n int) ([]byte, error) {
 
 	rlen := b.LenRead()
 	if rlen < n {
-		return nil, io.EOF
+		return nil, b.eofErr
 	}
 
 	curPos := b.CurPos()
