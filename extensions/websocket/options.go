@@ -16,6 +16,8 @@ package websocket
 import (
 	"context"
 	"crypto/tls"
+	"io"
+	"net/http"
 	"time"
 )
 
@@ -147,11 +149,14 @@ func WithServerCombinedWrites(enabled bool) ServerOption {
 }
 
 type clientOptions struct {
-	timeout       time.Duration
-	subprotocols  []string
-	messageType   MessageType
-	tlsConfig     *tls.Config
-	combineWrites bool
+	timeout                time.Duration
+	subprotocols           []string
+	handshakeHeader        HandshakeHeader
+	onHandshakeHeader      func(key, value []byte) error
+	onHandshakeStatusError func(status int, reason []byte, resp io.Reader)
+	messageType            MessageType
+	tlsConfig              *tls.Config
+	combineWrites          bool
 }
 
 func (o *clientOptions) setDefaults() {
@@ -172,6 +177,62 @@ func WithTimeout(timeout time.Duration) ClientOption {
 func WithSubProtocols(subprotocols []string) ClientOption {
 	return func(o *clientOptions) {
 		o.subprotocols = subprotocols
+	}
+}
+
+// WithClientHandshakeRequestHeader provides the option to write additional HTTP headers during handshake request.
+func WithClientHandshakeRequestHeader(header HandshakeHeader) ClientOption {
+	return func(o *clientOptions) {
+		o.handshakeHeader = header
+	}
+}
+
+type handshakeHeaderHTTP http.Header
+
+func (h handshakeHeaderHTTP) WriteTo(w io.Writer) (int64, error) {
+	wr := &handshakeHeaderWriter{w: w}
+	err := http.Header(h).Write(wr)
+	return wr.n, err
+}
+
+// handshakeHeaderWriter implements io.Writer and io.StringWriter to avoid extra allocations in http.Header.Write.
+type handshakeHeaderWriter struct {
+	n int64
+	w io.Writer
+}
+
+// WriteString avoids allocating a temporary []byte when http.Header.Write uses io.WriteString.
+func (w *handshakeHeaderWriter) WriteString(s string) (int, error) {
+	n, err := io.WriteString(w.w, s)
+	w.n += int64(n)
+	return n, err
+}
+
+// Write writes bytes and tracks the total number of bytes written.
+func (w *handshakeHeaderWriter) Write(p []byte) (int, error) {
+	n, err := w.w.Write(p)
+	w.n += int64(n)
+	return n, err
+}
+
+// WithClientHandshakeRequestHeaderHTTP provides the option to set HTTP headers for handshake request.
+func WithClientHandshakeRequestHeaderHTTP(header http.Header) ClientOption {
+	return func(o *clientOptions) {
+		o.handshakeHeader = handshakeHeaderHTTP(header)
+	}
+}
+
+// WithClientOnHandshakeResponseHeader provides the option to inspect non-WebSocket headers from the handshake response.
+func WithClientOnHandshakeResponseHeader(onHeader func(key, value []byte) error) ClientOption {
+	return func(o *clientOptions) {
+		o.onHandshakeHeader = onHeader
+	}
+}
+
+// WithClientOnHandshakeResponseStatusError provides the option to inspect response bytes when the server returns a non-101 status.
+func WithClientOnHandshakeResponseStatusError(onStatusError func(status int, reason []byte, resp io.Reader)) ClientOption {
+	return func(o *clientOptions) {
+		o.onHandshakeStatusError = onStatusError
 	}
 }
 

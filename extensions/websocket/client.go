@@ -14,8 +14,10 @@
 package websocket
 
 import (
+	"bytes"
 	stdtls "crypto/tls"
 	"fmt"
+	"io"
 	neturl "net/url"
 	"strings"
 
@@ -37,16 +39,36 @@ func Dial(url string, opts ...ClientOption) (Conn, error) {
 		opt(&options)
 	}
 	c, err := dial(u, &options)
-	dialer := ws.Dialer{
-		Protocols: options.subprotocols,
-	}
-	_, handshake, err := dialer.Upgrade(c, u)
 	if err != nil {
 		return nil, err
+	}
+	dialer := ws.Dialer{
+		Protocols:     options.subprotocols,
+		Header:        options.handshakeHeader,
+		OnHeader:      options.onHandshakeHeader,
+		OnStatusError: options.onHandshakeStatusError,
+	}
+	br, handshake, err := dialer.Upgrade(c, u)
+	if err != nil {
+		return nil, err
+	}
+	var source io.Reader
+	if br != nil {
+		n := br.Buffered()
+		if n > 0 {
+			prefix := make([]byte, n)
+			if _, err := io.ReadFull(br, prefix); err != nil {
+				ws.PutReader(br)
+				return nil, err
+			}
+			source = io.MultiReader(bytes.NewReader(prefix), c)
+		}
+		ws.PutReader(br)
 	}
 	wc := &conn{
 		raw:           c,
 		role:          ws.StateClientSide,
+		source:        source,
 		subprotocol:   handshake.Protocol,
 		messageType:   options.messageType,
 		combineWrites: options.combineWrites,
