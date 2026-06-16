@@ -679,8 +679,8 @@ func (b *Buffer) Release() {
 	}
 	// Update NodeBlockSize as the maximum readLength
 	// to minimize node allocation.
-	if b.enableAutoNodeBlockSize {
-		for b.nodeBlockSize < uint32(readLength) && b.nodeBlockSize*2 <= maxNodeBlockSize {
+	if b.enableAutoNodeBlockSize && readLength <= maxNodeBlockSize {
+		for int64(b.nodeBlockSize) < int64(readLength) && b.nodeBlockSize*2 <= maxNodeBlockSize {
 			b.nodeBlockSize <<= 1
 		}
 	}
