@@ -303,6 +303,61 @@ func TestWritev(t *testing.T) {
 	}, nil)
 }
 
+func TestServerOutboundBufferLimitWriteMessage(t *testing.T) {
+	payload := bytes.Repeat([]byte("a"), 8*1024)
+	for _, combineWrites := range []bool{false, true} {
+		name := "without_combined_writes"
+		if combineWrites {
+			name = "with_combined_writes"
+		}
+		t.Run(name, func(t *testing.T) {
+			serverErr := make(chan error, 2)
+			runTestWithHandles(t, func(conn websocket.Conn) error {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					serverErr <- err
+					return err
+				}
+				require.Zero(t, websocket.OutboundBuffered(conn))
+				err = conn.WriteMessage(websocket.Binary, payload)
+				serverErr <- err
+				return err
+			}, func(conn websocket.Conn) error {
+				if err := conn.WriteMessage(websocket.Binary, hello); err != nil {
+					return err
+				}
+				err := waitServerError(serverErr)
+				require.True(t, errors.Is(err, tnet.ErrOutboundBufferLimitExceeded), "err: %+v", err)
+				return nil
+			}, nil,
+				websocket.WithServerOutboundBufferLimit(1024),
+				websocket.WithServerCombinedWrites(combineWrites))
+		})
+	}
+}
+
+func TestServerOutboundBufferLimitWritevMessage(t *testing.T) {
+	serverErr := make(chan error, 2)
+	payload := bytes.Repeat([]byte("a"), 8*1024)
+	runTestWithHandles(t, func(conn websocket.Conn) error {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			serverErr <- err
+			return err
+		}
+		err = conn.WritevMessage(websocket.Binary, payload, []byte("b"))
+		serverErr <- err
+		return err
+	}, func(conn websocket.Conn) error {
+		if err := conn.WriteMessage(websocket.Binary, hello); err != nil {
+			return err
+		}
+		err := waitServerError(serverErr)
+		require.True(t, errors.Is(err, tnet.ErrOutboundBufferLimitExceeded), "err: %+v", err)
+		return nil
+	}, nil, websocket.WithServerOutboundBufferLimit(1024))
+}
+
 func TestSubProtocols(t *testing.T) {
 	runTestWithHandles(t, func(conn websocket.Conn) error {
 		require.Equal(t, "superchat", conn.Subprotocol())
@@ -335,6 +390,15 @@ func TestSubProtocols(t *testing.T) {
 		}
 		return "", true
 	}))
+}
+
+func waitServerError(errCh <-chan error) error {
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(5 * time.Second):
+		return errors.New("timeout waiting server error")
+	}
 }
 
 func TestReadWrite(t *testing.T) {

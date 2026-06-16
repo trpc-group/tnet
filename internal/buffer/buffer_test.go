@@ -89,6 +89,50 @@ func TestBuffer_Writev(t *testing.T) {
 	assert.Equal(t, len(s1)+len(s2)+len(s3), n)
 }
 
+func TestBuffer_WritevLimited(t *testing.T) {
+	t.Run("safe write reaches limit", func(t *testing.T) {
+		b := New()
+		defer Free(b)
+
+		n, err := b.WritevLimited(true, 6, []byte("abc"), []byte("def"))
+		assert.NoError(t, err)
+		assert.Equal(t, 6, n)
+		assert.Equal(t, 6, b.LenRead())
+	})
+
+	t.Run("unsafe write rejects overflow without changing length", func(t *testing.T) {
+		b := New()
+		defer Free(b)
+
+		n, err := b.WritevLimited(false, 5, []byte("abcde"))
+		assert.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, 5, b.LenRead())
+
+		n, err = b.WritevLimited(false, 5, []byte("f"))
+		assert.True(t, errors.Is(err, ErrBufferFull))
+		assert.Zero(t, n)
+		assert.Equal(t, 5, b.LenRead())
+	})
+
+	t.Run("zero disables limit", func(t *testing.T) {
+		b := New()
+		defer Free(b)
+
+		n, err := b.WritevLimited(true, 0, []byte("abc"), []byte("def"))
+		assert.NoError(t, err)
+		assert.Equal(t, 6, n)
+		assert.Equal(t, 6, b.LenRead())
+	})
+
+	t.Run("nil buffer", func(t *testing.T) {
+		var b *Buffer
+		n, err := b.WritevLimited(true, 1, []byte("a"))
+		assert.True(t, errors.Is(err, ErrInvalidParam))
+		assert.Zero(t, n)
+	})
+}
+
 func TestBuffer_Write(t *testing.T) {
 	// 无参数
 	b := New()

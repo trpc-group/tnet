@@ -33,6 +33,7 @@ func NewService(ln net.Listener, handler Handler, opts ...ServerOption) (tnet.Se
 	tnetOpts := []tnet.Option{
 		tnet.WithTCPKeepAlive(options.keepAlive),
 		tnet.WithTCPIdleTimeout(options.idleTimeout),
+		tnet.WithTCPOutboundBufferLimit(options.outboundBufferLimit),
 		// After sending the data, tls needs to reuse the underlying
 		// bytes slice, so SafeWrite must be enabled to ensure that
 		// a copy is made when the data is written.

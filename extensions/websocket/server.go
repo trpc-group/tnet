@@ -38,20 +38,32 @@ func NewService(ln net.Listener, handler Handler, opts ...ServerOption) (tnet.Se
 	if options.tlsConfig != nil {
 		return tls.NewService(ln, func(c tls.Conn) error {
 			return handleWithOptions(&rawConn{Conn: c}, handler, &options)
-		}, tls.WithTCPKeepAlive(options.keepAlive),
-			tls.WithServerIdleTimeout(options.idleTimeout),
-			tls.WithServerTLSConfig(options.tlsConfig),
-			tls.WithOnClosed(onClosedTLS(options.onClosed)),
-			tls.WithServerFlushWrite(true), // Enable flush write for websocket.
-		)
+		}, tlsServiceOptions(&options)...)
 	}
 	return tnet.NewTCPService(ln, func(c tnet.Conn) error {
 		return handleWithOptions(c, handler, &options)
-	}, tnet.WithTCPKeepAlive(options.keepAlive),
+	}, tcpServiceOptions(&options)...)
+}
+
+func tlsServiceOptions(options *serverOptions) []tls.ServerOption {
+	return []tls.ServerOption{
+		tls.WithTCPKeepAlive(options.keepAlive),
+		tls.WithServerIdleTimeout(options.idleTimeout),
+		tls.WithServerTLSConfig(options.tlsConfig),
+		tls.WithOnClosed(onClosedTLS(options.onClosed)),
+		tls.WithServerFlushWrite(true), // Enable flush write for websocket.
+		tls.WithServerOutboundBufferLimit(options.outboundBufferLimit),
+	}
+}
+
+func tcpServiceOptions(options *serverOptions) []tnet.Option {
+	return []tnet.Option{
+		tnet.WithTCPKeepAlive(options.keepAlive),
 		tnet.WithTCPIdleTimeout(options.idleTimeout),
 		tnet.WithOnTCPClosed(onClosed(options.onClosed)),
 		tnet.WithFlushWrite(true), // Enable flushwrite for websocket.
-	)
+		tnet.WithTCPOutboundBufferLimit(options.outboundBufferLimit),
+	}
 }
 
 type graderKey struct{}

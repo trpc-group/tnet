@@ -37,6 +37,16 @@ func (c *conn) GetMetaData() interface{} {
 	return c.metaData
 }
 
+// OutboundBuffered returns the current outbound buffered bytes for c.
+// It returns 0 if c is nil or is not backed by tnet TCP.
+func OutboundBuffered(c Conn) int {
+	tc, ok := c.(*conn)
+	if !ok || tc == nil {
+		return 0
+	}
+	return tnet.OutboundBuffered(tc.raw)
+}
+
 // SetIdleTimeout sets connection level idle timeout.
 func (c *conn) SetIdleTimeout(d time.Duration) error {
 	return c.raw.SetIdleTimeout(d)
