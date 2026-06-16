@@ -48,6 +48,8 @@ var (
 	DefaultCleanUpThrottle = 10000
 	// ErrConnClosed connection is closed.
 	ErrConnClosed = netError{error: errors.New("conn is closed")}
+	// ErrOutboundBufferLimitExceeded means outbound buffered bytes exceeded the configured limit.
+	ErrOutboundBufferLimitExceeded = netError{error: errors.New("outbound buffer limit exceeded")}
 	// EAGAIN represents error of not enough data.
 	EAGAIN = netError{error: errors.New("no enough data, try it again")}
 )
@@ -73,12 +75,13 @@ type tcpconn struct {
 	nfd            netFD
 
 	closer
-	postpone    autopostpone.PostponeWrite
-	waitReadLen atomic.Int32
-	reading     locker.Locker
-	writing     locker.Locker
-	nonblocking bool
-	safeWrite   bool
+	postpone            autopostpone.PostponeWrite
+	waitReadLen         atomic.Int32
+	reading             locker.Locker
+	writing             locker.Locker
+	nonblocking         bool
+	safeWrite           bool
+	outboundBufferLimit int
 }
 
 // MassiveConnections denotes whether this is under heavy connections' scenario.
@@ -271,8 +274,13 @@ func (tc *tcpconn) Writev(p ...[]byte) (int, error) {
 	if !tc.beginJobSafely(apiWrite) {
 		return 0, ErrConnClosed
 	}
-	n := tc.outBuffer.Writev(tc.safeWrite, p...)
-	var err error
+	n, err := tc.writeToOutboundBuffer(p...)
+	if err != nil {
+		tc.endJobSafely(apiWrite)
+		metrics.Add(metrics.TCPOutboundBufferLimitExceeded, 1)
+		tc.Close()
+		return n, err
+	}
 	if tc.postpone.Enabled() {
 		err = tc.notify()
 	} else {
@@ -284,6 +292,20 @@ func (tc *tcpconn) Writev(p ...[]byte) (int, error) {
 		return n, err
 	}
 	tc.endJobSafely(apiWrite)
+	return n, nil
+}
+
+func (tc *tcpconn) writeToOutboundBuffer(p ...[]byte) (int, error) {
+	if tc == nil {
+		return 0, ErrConnClosed
+	}
+	if tc.outboundBufferLimit <= 0 {
+		return tc.outBuffer.Writev(tc.safeWrite, p...), nil
+	}
+	n, err := tc.outBuffer.WritevLimited(tc.safeWrite, tc.outboundBufferLimit, p...)
+	if err != nil {
+		return n, ErrOutboundBufferLimitExceeded
+	}
 	return n, nil
 }
 

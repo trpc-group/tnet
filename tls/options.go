@@ -21,12 +21,13 @@ import (
 const defaultDialTimeout = 10 * time.Second
 
 type serverOptions struct {
-	cfg         *tls.Config
-	keepAlive   time.Duration
-	idleTimeout time.Duration
-	flushWrite  bool
-	onOpened    OnOpened
-	onClosed    OnClosed
+	cfg                 *tls.Config
+	keepAlive           time.Duration
+	idleTimeout         time.Duration
+	flushWrite          bool
+	outboundBufferLimit int
+	onOpened            OnOpened
+	onClosed            OnClosed
 }
 
 // OnOpened fires when the tcp connection is established.
@@ -65,6 +66,17 @@ func WithServerIdleTimeout(idleTimeout time.Duration) ServerOption {
 func WithServerFlushWrite(flushWrite bool) ServerOption {
 	return func(o *serverOptions) {
 		o.flushWrite = flushWrite
+	}
+}
+
+// WithServerOutboundBufferLimit sets the max outbound buffered bytes for each server connection.
+// If limit is less than or equal to 0, the limit check is disabled.
+func WithServerOutboundBufferLimit(limit int) ServerOption {
+	return func(o *serverOptions) {
+		if o == nil {
+			return
+		}
+		o.outboundBufferLimit = limit
 	}
 }
 

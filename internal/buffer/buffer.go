@@ -474,14 +474,38 @@ func (b *Buffer) Writev(safeWrite bool, bs ...[]byte) int {
 	return b.linkFrom(bs...)
 }
 
+// WritevLimited appends data slice to buffer unless the written data would exceed limit.
+// If limit is less than or equal to 0, the limit check is disabled.
+func (b *Buffer) WritevLimited(safeWrite bool, limit int, bs ...[]byte) (int, error) {
+	if b == nil {
+		return 0, ErrInvalidParam
+	}
+	if limit <= 0 {
+		return b.Writev(safeWrite, bs...), nil
+	}
+	length := byteSlicesLen(bs...)
+	if length == 0 {
+		return 0, nil
+	}
+	b.wlock.Lock()
+	defer b.wlock.Unlock()
+	if length > limit-b.LenRead() {
+		return 0, ErrBufferFull
+	}
+	if safeWrite {
+		return b.copyFromLocked(length, bs...), nil
+	}
+	return b.linkFromLocked(bs...), nil
+}
+
 func (b *Buffer) copyFrom(bs ...[]byte) int {
 	b.wlock.Lock()
 	defer b.wlock.Unlock()
+	return b.copyFromLocked(byteSlicesLen(bs...), bs...)
+}
+
+func (b *Buffer) copyFromLocked(length int, bs ...[]byte) int {
 	b.prepareFill()
-	var length int
-	for i := range bs {
-		length += len(bs[i])
-	}
 	b.malloc(b.calNodes(length))
 	var copied int
 	for i := range bs {
@@ -504,12 +528,24 @@ func (b *Buffer) copyFromSingleByteSlice(buf []byte) int {
 }
 
 func (b *Buffer) linkFrom(bs ...[]byte) int {
-	total := len(bs)
 	b.wlock.Lock()
 	defer b.wlock.Unlock()
+	return b.linkFromLocked(bs...)
+}
+
+func (b *Buffer) linkFromLocked(bs ...[]byte) int {
+	total := len(bs)
 	linked, length := b.linkWithExistingNodes(bs...)
 	if linked < total {
 		length += b.linkWithNewNodes(bs[linked:]...)
+	}
+	return length
+}
+
+func byteSlicesLen(bs ...[]byte) int {
+	var length int
+	for i := range bs {
+		length += len(bs[i])
 	}
 	return length
 }

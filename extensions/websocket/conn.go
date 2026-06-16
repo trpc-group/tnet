@@ -72,6 +72,26 @@ type rawConn struct {
 	tls.Conn
 }
 
+// OutboundBuffered returns the current outbound buffered bytes for c.
+// It returns 0 if c is nil or is not backed by tnet TCP.
+func OutboundBuffered(c Conn) int {
+	wc, ok := c.(*conn)
+	if !ok || wc == nil {
+		return 0
+	}
+	switch raw := wc.raw.(type) {
+	case tnet.Conn:
+		return tnet.OutboundBuffered(raw)
+	case *rawConn:
+		if raw == nil {
+			return 0
+		}
+		return tls.OutboundBuffered(raw.Conn)
+	default:
+		return 0
+	}
+}
+
 // Writev implements websocket.RawConn interface.
 func (c *rawConn) Writev(p ...[]byte) (int, error) {
 	var num int

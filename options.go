@@ -71,6 +71,7 @@ type options struct {
 	tcpIdleTimeout            time.Duration
 	tcpWriteIdleTimeout       time.Duration
 	tcpReadIdleTimeout        time.Duration
+	tcpOutboundBufferLimit    int
 	nonblocking               bool
 	safeWrite                 bool
 	maxUDPPacketSize          int
@@ -108,6 +109,17 @@ func WithTCPReadIdleTimeout(idleTimeout time.Duration) Option {
 func WithTCPIdleTimeout(idleTimeout time.Duration) Option {
 	return Option{func(op *options) {
 		op.tcpIdleTimeout = idleTimeout
+	}}
+}
+
+// WithTCPOutboundBufferLimit sets the max outbound buffered bytes for each TCP connection.
+// If limit is less than or equal to 0, the limit check is disabled.
+func WithTCPOutboundBufferLimit(limit int) Option {
+	return Option{func(op *options) {
+		if op == nil {
+			return
+		}
+		op.tcpOutboundBufferLimit = limit
 	}}
 }
 

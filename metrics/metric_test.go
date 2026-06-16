@@ -32,6 +32,7 @@ func TestMetrics(t *testing.T) {
 	metrics.Add(metrics.EpollEvents, 99)
 	metrics.Add(metrics.TCPWritevCalls, 191)
 	metrics.Add(metrics.TCPWritevBlocks, 1191)
+	metrics.Add(metrics.TCPOutboundBufferLimitExceeded, 1)
 	metrics.Add(metrics.TCPReadvCalls, 191)
 	metrics.Add(metrics.TCPReadvBytes, 1191)
 	metrics.Add(metrics.UDPRecvMMsgCalls, 191)
@@ -40,4 +41,14 @@ func TestMetrics(t *testing.T) {
 	assert.Equal(t, uint64(0), metrics.Get(metrics.Max+1))
 	metrics.ShowMetrics()
 	metrics.ShowMetricsOfPeriod(time.Millisecond)
+}
+
+func TestMetricConstantsKeepBackwardCompatibility(t *testing.T) {
+	assert.Equal(t, 13, metrics.UDPRecvMMsgCalls)
+	assert.Equal(t, 24, metrics.EpollWait)
+	assert.Equal(t, 27, metrics.TaskAssigned)
+	assert.Equal(t, 28, metrics.Max)
+	assert.Equal(t, metrics.Max, metrics.TCPOutboundBufferLimitExceeded)
+	metrics.Add(metrics.TCPOutboundBufferLimitExceeded, 1)
+	assert.Greater(t, metrics.Get(metrics.TCPOutboundBufferLimitExceeded), uint64(0))
 }

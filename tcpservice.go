@@ -150,6 +150,7 @@ func tcpServiceOnRead(data interface{}, _ *iovec.IOData) error {
 		if err := tconn.SetReadIdleTimeout(s.opts.tcpReadIdleTimeout); err != nil {
 			return fmt.Errorf("tnet connection set read idle timeout error: %w", err)
 		}
+		tconn.outboundBufferLimit = s.opts.tcpOutboundBufferLimit
 		tconn.SetNonBlocking(s.opts.nonblocking)
 		tconn.SetSafeWrite(s.opts.safeWrite)
 		if s.opts.onTCPClosed != nil {

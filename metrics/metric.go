@@ -62,18 +62,25 @@ const (
 	EpollEvents
 	TaskAssigned
 
-	// Keep it last.
+	// Keep it last in this iota block for backward compatibility.
 
 	Max
 )
 
+const (
+	// TCPOutboundBufferLimitExceeded is the number of times outbound buffer limit was exceeded.
+	TCPOutboundBufferLimitExceeded = Max
+
+	metricNum = TCPOutboundBufferLimitExceeded + 1
+)
+
 var (
-	metrics [Max]atomic.Uint64
+	metrics [metricNum]atomic.Uint64
 )
 
 // Add metrics counter.
 func Add(name int, delta uint64) {
-	if name >= Max {
+	if name >= metricNum {
 		return
 	}
 	metrics[name].Add(delta)
@@ -81,7 +88,7 @@ func Add(name int, delta uint64) {
 
 // Get one metric counter.
 func Get(name int) uint64 {
-	if name >= Max {
+	if name >= metricNum {
 		return 0
 	}
 	return metrics[name].Load()
@@ -90,7 +97,7 @@ func Get(name int) uint64 {
 // GetAll get all metrics.
 func GetAll() [Max]uint64 {
 	var m [Max]uint64
-	for i := range metrics {
+	for i := range m {
 		m[i] = metrics[i].Load()
 	}
 	return m
@@ -100,30 +107,32 @@ func GetAll() [Max]uint64 {
 // It will block d duration, and then prints metrics info.
 func ShowMetricsOfPeriod(d time.Duration) {
 	old := GetAll()
+	oldOutboundBufferLimitExceeded := Get(TCPOutboundBufferLimitExceeded)
 	<-time.After(d)
 	new := GetAll()
+	outboundBufferLimitExceeded := Get(TCPOutboundBufferLimitExceeded) - oldOutboundBufferLimitExceeded
 	var m [Max]uint64
-	for i := range metrics {
+	for i := range m {
 		m[i] = new[i] - old[i]
 	}
-	showAll(m)
+	showAll(m, outboundBufferLimitExceeded)
 }
 
 // ShowMetrics shows metric info in console.
 func ShowMetrics() {
 	m := GetAll()
-	showAll(m)
+	showAll(m, Get(TCPOutboundBufferLimitExceeded))
 }
 
-func showAll(m [Max]uint64) {
+func showAll(m [Max]uint64, outboundBufferLimitExceeded uint64) {
 	log.Debug("######### tnet metrics (", time.Now().Format("2006-01-02 15:04:05"), ") ###########")
-	showTCPMetrics(m)
+	showTCPMetrics(m, outboundBufferLimitExceeded)
 	showUDPMetrics(m)
 	showEpollMetrics(m)
 	log.Debugf("%-59s: %d", "# number of task assigned (doTask)", m[TaskAssigned])
 }
 
-func showTCPMetrics(m [Max]uint64) {
+func showTCPMetrics(m [Max]uint64, outboundBufferLimitExceeded uint64) {
 	log.Debugf("%-59s: %d", "# TCP - number of Readv system calls", m[TCPReadvCalls])
 	log.Debugf("%-59s: %d", "# TCP - number of failed Readv system calls", m[TCPReadvFails])
 	readvSucc := m[TCPReadvCalls] - m[TCPReadvFails]
@@ -143,6 +152,7 @@ func showTCPMetrics(m [Max]uint64) {
 	log.Debugf("%-59s: %d", "# TCP - number of connections closed", m[TCPConnsClose])
 	log.Debugf("%-59s: %d", "# TCP - number of times postpone write switched off", m[TCPPostponeWriteOff])
 	log.Debugf("%-59s: %d", "# TCP - number of times postpone write switched on", m[TCPPostponeWriteOn])
+	log.Debugf("%-59s: %d", "# TCP - number of outbound buffer limit exceeded", outboundBufferLimitExceeded)
 }
 
 func showUDPMetrics(m [Max]uint64) {

@@ -27,6 +27,9 @@ func TestCombinedWritesOptions(t *testing.T) {
 
 		WithServerCombinedWrites(false)(opts)
 		assert.False(t, opts.combineWrites)
+		WithServerOutboundBufferLimit(1024)(opts)
+		assert.Equal(t, 1024, opts.outboundBufferLimit)
+		WithServerOutboundBufferLimit(1024)(nil)
 	})
 
 	t.Run("client option", func(t *testing.T) {

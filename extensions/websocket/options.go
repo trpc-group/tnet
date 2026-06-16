@@ -41,6 +41,7 @@ type serverOptions struct {
 	idleTimeout         time.Duration
 	onClosed            func(Conn) error
 	combineWrites       bool
+	outboundBufferLimit int
 }
 
 // ServerOption is the type for a single server option.
@@ -143,6 +144,17 @@ func WithOnClosed(onClosed func(Conn) error) ServerOption {
 func WithServerCombinedWrites(enabled bool) ServerOption {
 	return func(o *serverOptions) {
 		o.combineWrites = enabled
+	}
+}
+
+// WithServerOutboundBufferLimit sets the max outbound buffered bytes for each server connection.
+// If limit is less than or equal to 0, the limit check is disabled.
+func WithServerOutboundBufferLimit(limit int) ServerOption {
+	return func(o *serverOptions) {
+		if o == nil {
+			return
+		}
+		o.outboundBufferLimit = limit
 	}
 }
 

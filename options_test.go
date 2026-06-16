@@ -53,6 +53,10 @@ func TestTNETOptions(t *testing.T) {
 	WithSafeWrite(true).f(opts)
 	assert.True(t, opts.safeWrite)
 
+	WithTCPOutboundBufferLimit(1024).f(opts)
+	assert.Equal(t, 1024, opts.tcpOutboundBufferLimit)
+	WithTCPOutboundBufferLimit(1024).f(nil)
+
 	WithExactUDPBufferSizeEnabled(true).f(opts)
 	assert.True(t, opts.exactUDPBufferSizeEnabled)
 }
