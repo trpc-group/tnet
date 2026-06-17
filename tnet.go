@@ -18,11 +18,34 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os/exec"
+	"strings"
 	"time"
 
 	// Stat reports user statistics.
 	_ "trpc.group/trpc-go/tnet/internal/stat"
 )
+
+const (
+	gracefulRestartFDEnv          = "GRACEFUL_RESTART_FD"
+	gracefulRestartFD             = "3"
+	gracefulListenerFileName      = "listener"
+	gracefulUDPListenerFileName   = "udp_listener"
+	defaultGracefulRestartTimeout = 2 * time.Second
+)
+
+var execCommand = exec.Command
+
+func cleanAndAppendEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
+	}
+	return append(out, prefix+value)
+}
 
 // BaseConn is common for stream and packet oriented network connection.
 type BaseConn interface {
@@ -127,6 +150,12 @@ type Service interface {
 	// accepting connections and reading trans data.
 	// Param ctx is used to shut down the service with all connections gracefully.
 	Serve(ctx context.Context) error
+}
+
+// Restartable is optionally implemented by services that support graceful restart.
+type Restartable interface {
+	// Restart starts a child process with inherited listener file descriptors and shuts down the current service.
+	Restart(ctx context.Context) error
 }
 
 // Listen announces on the local network address.

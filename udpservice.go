@@ -18,7 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
+	"time"
 
 	goreuseport "github.com/kavu/go_reuseport"
 	"trpc.group/trpc-go/tnet/internal/netutil"
@@ -34,6 +36,8 @@ func NewUDPService(lns []PacketConn, handler UDPHandler, opt ...Option) (Service
 	}
 	return newUDPService(lns, handler, opt...)
 }
+
+var _ Restartable = (*udpservice)(nil)
 
 func newUDPService(lns []PacketConn, handler UDPHandler, opt ...Option) (Service, error) {
 	var opts options
@@ -170,6 +174,25 @@ func (s *udpservice) close() error {
 		}
 	}
 	return nil
+}
+
+// Restart starts a new process with the first UDP listener fd and closes the old packet conns.
+func (s *udpservice) Restart(ctx context.Context) error {
+	if len(s.conns) == 0 {
+		return errors.New("no UDP conn to restart")
+	}
+	file := os.NewFile(uintptr(s.conns[0].nfd.fd), gracefulUDPListenerFileName)
+	cmd := execCommand(os.Args[0], os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = cleanAndAppendEnv(os.Environ(), gracefulRestartFDEnv, gracefulRestartFD)
+	cmd.ExtraFiles = []*os.File{file}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	time.Sleep(s.opts.gracefulRestartTimeout)
+	return s.close()
 }
 
 func validateListeners(lns []PacketConn) error {
