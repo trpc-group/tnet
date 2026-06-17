@@ -20,6 +20,7 @@ import (
 	"io"
 	neturl "net/url"
 	"strings"
+	"time"
 
 	"github.com/gobwas/ws"
 	"trpc.group/trpc-go/tnet"
@@ -38,9 +39,13 @@ func Dial(url string, opts ...ClientOption) (Conn, error) {
 	for _, opt := range opts {
 		opt(&options)
 	}
+	start := time.Now()
 	c, err := dial(u, &options)
 	if err != nil {
 		return nil, err
+	}
+	if options.timeout > 0 {
+		_ = c.SetDeadline(start.Add(options.timeout))
 	}
 	dialer := ws.Dialer{
 		Protocols:     options.subprotocols,
@@ -50,7 +55,11 @@ func Dial(url string, opts ...ClientOption) (Conn, error) {
 	}
 	br, handshake, err := dialer.Upgrade(c, u)
 	if err != nil {
+		c.Close()
 		return nil, err
+	}
+	if options.timeout > 0 {
+		_ = c.SetDeadline(time.Time{})
 	}
 	var source io.Reader
 	if br != nil {
@@ -59,6 +68,7 @@ func Dial(url string, opts ...ClientOption) (Conn, error) {
 			prefix := make([]byte, n)
 			if _, err := io.ReadFull(br, prefix); err != nil {
 				ws.PutReader(br)
+				c.Close()
 				return nil, err
 			}
 			source = io.MultiReader(bytes.NewReader(prefix), c)
@@ -99,7 +109,10 @@ func dial(u *neturl.URL, options *clientOptions) (rawConnection, error) {
 		if options.tlsConfig.ServerName == "" {
 			options.tlsConfig.ServerName = hostname
 		}
-		c, err := tls.Dial("tcp", addr, tls.WithClientTLSConfig(options.tlsConfig))
+		c, err := tls.Dial("tcp", addr,
+			tls.WithClientTLSConfig(options.tlsConfig),
+			tls.WithTimeout(options.timeout),
+		)
 		if err != nil {
 			return nil, err
 		}

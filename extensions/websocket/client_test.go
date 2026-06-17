@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha1"
+	stdtls "crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -187,6 +188,73 @@ func TestClientHandshakeHeaderAndBufferedBytes(t *testing.T) {
 	obs := <-obsCh
 	require.NoError(t, obs.err)
 	require.Equal(t, "abc", obs.xToken)
+}
+
+func TestWSSDialUsesConfiguredTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	serverDone := make(chan struct{})
+	t.Cleanup(func() { close(serverDone) })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		<-serverDone
+	}()
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := websocket.Dial("wss://"+ln.Addr().String()+"/",
+			websocket.WithTimeout(50*time.Millisecond),
+			websocket.WithClientTLSConfig(&stdtls.Config{InsecureSkipVerify: true}),
+		)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.Less(t, time.Since(start), time.Second)
+	case <-time.After(time.Second):
+		t.Fatal("wss dial did not respect timeout")
+	}
+}
+
+func TestDialUpgradeUsesConfiguredTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	serverDone := make(chan struct{})
+	t.Cleanup(func() { close(serverDone) })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		<-serverDone
+	}()
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := websocket.Dial("ws://"+ln.Addr().String()+"/", websocket.WithTimeout(50*time.Millisecond))
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.Less(t, time.Since(start), time.Second)
+	case <-time.After(time.Second):
+		t.Fatal("websocket upgrade did not respect timeout")
+	}
 }
 
 type statusErrorObservation struct {
