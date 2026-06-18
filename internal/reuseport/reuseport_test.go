@@ -17,19 +17,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewReusablePortPacketConn(t *testing.T) {
 	listenerOne, err := NewReusablePortPacketConn("udp4", "localhost:10082")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	defer listenerOne.Close()
 
 	listenerTwo, err := NewReusablePortPacketConn("udp", "127.0.0.1:10082")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	defer listenerTwo.Close()
 
 	listenerThree, err := NewReusablePortPacketConn("udp6", ":10082")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	defer listenerThree.Close()
 
 }
