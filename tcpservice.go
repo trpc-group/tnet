@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -56,6 +57,8 @@ func NewTCPService(listener net.Listener, handler TCPHandler, opt ...Option) (Se
 	return newTCPService(ln, handler, opt...)
 }
 
+var _ Restartable = (*tcpservice)(nil)
+
 func newTCPService(ln *tcpListener, handler TCPHandler, opt ...Option) (Service, error) {
 	opts := options{}
 	opts.setDefault()
@@ -70,6 +73,7 @@ func newTCPService(ln *tcpListener, handler TCPHandler, opt ...Option) (Service,
 		conns:     make(map[int]*tcpconn),
 		hupCh:     make(chan struct{}),
 	}
+	s.connCond = sync.NewCond(&s.mu)
 	return s, nil
 }
 
@@ -80,14 +84,17 @@ const (
 )
 
 type tcpservice struct {
-	ln        *tcpListener
-	reqHandle TCPHandler
-	hupCh     chan struct{}
-	conns     map[int]*tcpconn
-	opts      options
-	closed    atomic.Bool
-	tempDelay time.Duration
-	mu        sync.Mutex
+	ln         *tcpListener
+	reqHandle  TCPHandler
+	hupCh      chan struct{}
+	conns      map[int]*tcpconn
+	opts       options
+	closed     atomic.Bool
+	restarting atomic.Bool
+	tempDelay  time.Duration
+	mu         sync.Mutex
+	hupOnce    sync.Once
+	connCond   *sync.Cond
 }
 
 // Serve starts the service.
@@ -101,12 +108,15 @@ func (s *tcpservice) Serve(ctx context.Context) error {
 	log.Infof("tnet tcp service started, current number of pollers: %d, use tnet.SetNumPollers to change it\n",
 		poller.NumPollers())
 
-	defer s.close()
-
 	select {
 	case <-ctx.Done():
+		_ = s.close()
 		return ctx.Err()
 	case <-s.hupCh:
+		if s.restarting.Load() {
+			return s.waitConnections(ctx)
+		}
+		_ = s.close()
 		return errors.New("listener is closed")
 	}
 }
@@ -200,7 +210,9 @@ func tcpServiceOnHup(data interface{}) {
 	if !ok || s == nil {
 		panic(fmt.Sprintf("bug: data is not *tcpservice type (%v) or s is nil pointer (%v)", !ok, s == nil))
 	}
-	close(s.hupCh)
+	s.hupOnce.Do(func() {
+		close(s.hupCh)
+	})
 }
 
 func (s *tcpservice) storeConn(conn *tcpconn) {
@@ -213,11 +225,11 @@ func (s *tcpservice) storeConn(conn *tcpconn) {
 }
 
 func (s *tcpservice) deleteConn(conn *tcpconn) {
-	if s.closed.Load() {
-		return
-	}
 	s.mu.Lock()
-	delete(s.conns, conn.nfd.FD())
+	if _, ok := s.conns[conn.nfd.FD()]; ok {
+		delete(s.conns, conn.nfd.FD())
+		s.connCond.Broadcast()
+	}
 	s.mu.Unlock()
 }
 
@@ -226,9 +238,70 @@ func (s *tcpservice) closeAll() {
 		return
 	}
 	s.mu.Lock()
+	conns := make([]*tcpconn, 0, len(s.conns))
 	for k, conn := range s.conns {
-		conn.Close()
+		conns = append(conns, conn)
 		delete(s.conns, k)
 	}
+	s.connCond.Broadcast()
 	s.mu.Unlock()
+	for _, conn := range conns {
+		conn.Close()
+	}
+}
+
+func (s *tcpservice) waitConnections(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.connCond.Broadcast()
+			s.mu.Unlock()
+		case <-stop:
+		}
+	}()
+	defer close(stop)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.conns) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		s.connCond.Wait()
+	}
+	return ctx.Err()
+}
+
+// Restart starts a new process, closes the listener, and waits for active TCP connections to drain.
+func (s *tcpservice) Restart(ctx context.Context) error {
+	if s.closed.Load() {
+		return errors.New("service is closed")
+	}
+	if !s.restarting.CAS(false, true) {
+		return errors.New("service is already restarting")
+	}
+
+	file := os.NewFile(uintptr(s.ln.FD()), gracefulListenerFileName)
+	cmd := execCommand(os.Args[0], os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = cleanAndAppendEnv(os.Environ(), gracefulRestartFDEnv, gracefulRestartFD)
+	cmd.ExtraFiles = []*os.File{file}
+	if err := cmd.Start(); err != nil {
+		s.restarting.Store(false)
+		return err
+	}
+
+	time.Sleep(s.opts.gracefulRestartTimeout)
+	if err := s.ln.Close(); err != nil {
+		return err
+	}
+	tcpServiceOnHup(s)
+	return s.waitConnections(ctx)
 }

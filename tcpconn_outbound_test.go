@@ -17,6 +17,7 @@ func (nopSockCloser) Close() error {
 func TestTCPConnWritevOutboundBufferLimitExceeded(t *testing.T) {
 	tc := &tcpconn{
 		readTrigger:         make(chan struct{}),
+		closedFinished:      make(chan struct{}),
 		outboundBufferLimit: 5,
 		nfd: netFD{
 			sock: nopSockCloser{},

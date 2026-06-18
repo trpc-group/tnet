@@ -76,12 +76,14 @@ type options struct {
 	safeWrite                 bool
 	maxUDPPacketSize          int
 	exactUDPBufferSizeEnabled bool
+	gracefulRestartTimeout    time.Duration
 }
 
 func (o *options) setDefault() {
 	o.tcpKeepAlive = defaultTCPKeepAlive
 	o.maxUDPPacketSize = defaultUDPBufferSize
 	o.exactUDPBufferSizeEnabled = defaultExactUDPBufferSizeEnabled
+	o.gracefulRestartTimeout = defaultGracefulRestartTimeout
 }
 
 // WithTCPKeepAlive sets the tcp keep alive interval.
@@ -195,5 +197,13 @@ func WithMaxUDPPacketSize(size int) Option {
 func WithExactUDPBufferSizeEnabled(exactUDPBufferSizeEnabled bool) Option {
 	return Option{func(op *options) {
 		op.exactUDPBufferSizeEnabled = exactUDPBufferSizeEnabled
+	}}
+}
+
+// WithGracefulRestartTimeout sets the timeout for graceful restart.
+// The parent process waits this long after starting the child process before closing the listener.
+func WithGracefulRestartTimeout(timeout time.Duration) Option {
+	return Option{func(op *options) {
+		op.gracefulRestartTimeout = timeout
 	}}
 }
