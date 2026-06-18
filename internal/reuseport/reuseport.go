@@ -168,7 +168,7 @@ func createPacketConn(fd int, sockaddr syscall.Sockaddr, fdName string) (net.Pac
 	return l, err
 }
 
-var reusePort = 0x0F
+var reusePort = soReusePort
 
 func setPacketConnSockOpt(fd int, sockaddr syscall.Sockaddr) error {
 	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); err != nil {

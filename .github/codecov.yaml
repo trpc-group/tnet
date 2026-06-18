@@ -1,0 +1,12 @@
+coverage:
+  precision: 5
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: 85%
+        threshold: 0%
