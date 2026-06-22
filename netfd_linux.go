@@ -118,22 +118,37 @@ func (nfd *netFD) sendMMsg(b *buffer.Buffer) error {
 	}
 
 	l := b.PeekBlocks(bufs)
+	if l == 0 {
+		return nil
+	}
 	mmsgs, bufs = mmsgs[:l], bufs[:l]
 
 	buildMMsgs(mmsgs, bufs)
 
 	n, err := nfd.syscallMMsg(unix.SYS_SENDMMSG, mmsgs)
 	metrics.Add(metrics.UDPSendMMsgCalls, 1)
+	if n > 0 {
+		metrics.Add(metrics.UDPSendMMsgPackets, uint64(n))
+		if skipErr := b.SkipBlocks(n); skipErr != nil {
+			return skipErr
+		}
+		b.Release()
+	}
 	if err != nil {
 		metrics.Add(metrics.UDPSendMMsgFails, 1)
-		return err
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+			return err
+		}
+		// UDP send errors are scoped to the current datagram. Returning the
+		// error would make the poller detach the shared UDP listener fd.
+		if b.LenRead() != 0 {
+			if skipErr := b.SkipBlocks(1); skipErr != nil {
+				return skipErr
+			}
+			b.Release()
+		}
 	}
-	metrics.Add(metrics.UDPSendMMsgPackets, uint64(n))
-	if err := b.SkipBlocks(n); err != nil {
-		return err
-	}
-	b.Release()
-	return err
+	return nil
 }
 
 func buildMMsgs(mmsgs []systype.MMsghdr, bufs [][]byte) error {
