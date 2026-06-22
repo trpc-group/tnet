@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"trpc.group/trpc-go/tnet/internal/buffer"
 	"trpc.group/trpc-go/tnet/internal/poller"
 )
 
@@ -70,6 +71,105 @@ func TestUDPConnWriteToDropsFailedPacketAndContinues(t *testing.T) {
 	}
 	if err := conn.nfd.Control(poller.ModReadable); err != nil {
 		t.Fatalf("udp fd was detached from poller: %v", err)
+	}
+}
+
+func TestNetFDSendPacketsWithEmptyBuffer(t *testing.T) {
+	raw, err := rawListenUDP("udp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	nfd, err := rawToNetFD(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b := buffer.New()
+	if err := nfd.SendPackets(b); err != nil {
+		t.Fatalf("SendPackets() = %v, want nil", err)
+	}
+	if b.LenRead() != 0 {
+		t.Fatalf("buffer length = %d, want 0", b.LenRead())
+	}
+}
+
+func TestNetFDSendPacketsDropsFailedPacket(t *testing.T) {
+	raw, err := rawListenUDP("udp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	nfd, err := rawToNetFD(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b := buffer.New()
+	block, err := parcel([]byte("bad"), &net.UDPAddr{IP: net.ParseIP("::1"), Port: 25000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Write(false, block)
+
+	if err := nfd.SendPackets(b); err != nil {
+		t.Fatalf("SendPackets() = %v, want nil", err)
+	}
+	if b.LenRead() != 0 {
+		t.Fatalf("buffer length = %d, want 0", b.LenRead())
+	}
+}
+
+func TestNetFDSendPacketsContinuesAfterFailedPacket(t *testing.T) {
+	raw, err := rawListenUDP("udp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	nfd, err := rawToNetFD(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	receiver, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer receiver.Close()
+
+	b := buffer.New()
+	firstBlock, err := parcel([]byte("first"), receiver.LocalAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	badBlock, err := parcel([]byte("bad"), &net.UDPAddr{IP: net.ParseIP("::1"), Port: 25000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBlock, err := parcel([]byte("second"), receiver.LocalAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Write(false, firstBlock)
+	b.Write(false, badBlock)
+	b.Write(false, secondBlock)
+
+	if err := nfd.SendPackets(b); err != nil {
+		t.Fatalf("SendPackets(first) = %v, want nil", err)
+	}
+	if err := nfd.SendPackets(b); err != nil {
+		t.Fatalf("SendPackets(bad) = %v, want nil", err)
+	}
+	if err := nfd.SendPackets(b); err != nil {
+		t.Fatalf("SendPackets(second) = %v, want nil", err)
+	}
+
+	got := readUDPPayloads(t, receiver, 2)
+	if string(got[0]) != "first" || string(got[1]) != "second" {
+		t.Fatalf("received payloads = %q, want [first second]", got)
+	}
+	if b.LenRead() != 0 {
+		t.Fatalf("buffer length = %d, want 0", b.LenRead())
 	}
 }
 
