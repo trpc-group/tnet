@@ -158,6 +158,56 @@ func TestSockaddrSliceToUDPAddr(t *testing.T) {
 	assert.Equal(t, expected6.String(), addr.String())
 }
 
+func TestSockaddrSliceToUDPAddrOwnsIPMemory(t *testing.T) {
+	tests := []struct {
+		name      string
+		network   string
+		original  string
+		overwrite string
+	}{
+		{
+			name:      "IPv4",
+			network:   "udp4",
+			original:  "127.0.0.2:12345",
+			overwrite: "127.0.0.3:54321",
+		},
+		{
+			name:      "IPv6",
+			network:   "udp6",
+			original:  "[2001:db8::2]:12345",
+			overwrite: "[2001:db8::3]:54321",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalAddr, err := net.ResolveUDPAddr(tt.network, tt.original)
+			if err != nil {
+				t.Fatalf("resolve original address: %v", err)
+			}
+			sockaddr, err := netutil.UDPAddrToSockaddrSlice(originalAddr)
+			if err != nil {
+				t.Fatalf("encode original address: %v", err)
+			}
+			addr, err := netutil.SockaddrSliceToUDPAddr(sockaddr)
+			if err != nil {
+				t.Fatalf("decode original address: %v", err)
+			}
+
+			overwriteAddr, err := net.ResolveUDPAddr(tt.network, tt.overwrite)
+			if err != nil {
+				t.Fatalf("resolve overwrite address: %v", err)
+			}
+			overwriteSockaddr, err := netutil.UDPAddrToSockaddrSlice(overwriteAddr)
+			if err != nil {
+				t.Fatalf("encode overwrite address: %v", err)
+			}
+			copy(sockaddr, overwriteSockaddr)
+
+			assert.Equal(t, tt.original, addr.String())
+		})
+	}
+}
+
 func TestSockaddrSliceToUDPAddr_Error(t *testing.T) {
 	invalidAddr := make([]byte, netutil.SockaddrSize+1)
 	addr, err := netutil.SockaddrSliceToUDPAddr(invalidAddr)

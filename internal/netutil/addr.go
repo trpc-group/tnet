@@ -172,11 +172,13 @@ func SockaddrSliceToUDPAddr(sockaddr []byte) (net.Addr, error) {
 	switch *family {
 	case unix.AF_INET:
 		sockaddrInet4 := (*unix.RawSockaddrInet4)(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&sockaddr)).Data))
-		addr.IP = sockaddrInet4.Addr[:]
+		addr.IP = make(net.IP, net.IPv4len)
+		copy(addr.IP, sockaddrInet4.Addr[:])
 		addr.Port = int(BigToLittleEndian(sockaddrInet4.Port))
 	case unix.AF_INET6:
 		sockaddrInet6 := (*unix.RawSockaddrInet6)(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&sockaddr)).Data))
-		addr.IP = sockaddrInet6.Addr[:]
+		addr.IP = make(net.IP, net.IPv6len)
+		copy(addr.IP, sockaddrInet6.Addr[:])
 		addr.Port = int(BigToLittleEndian(sockaddrInet6.Port))
 		addr.Zone = IP6ZoneToString(int(sockaddrInet6.Scope_id))
 	default:
